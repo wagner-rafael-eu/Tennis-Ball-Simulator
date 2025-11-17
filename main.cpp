@@ -12,6 +12,8 @@
 #include <vector>
 #include <cmath>
 #include <algorithm>
+#include <cstdlib>
+#include <ctime>
 
 #pragma comment(lib, "d2d1")
 #pragma comment(lib, "dwrite")
@@ -51,10 +53,38 @@ const float MIN_HORIZONTAL_FORCE = 0.0f; // Newtons
 const float MAX_HORIZONTAL_FORCE = 1000.0f; // Newtons
 const float MIN_ANGLE = 0.0f; // degrees
 const float MAX_ANGLE = 90.0f; // degrees
-const float ANGLE_STEP = 1.0f; // degrees per scroll
-const float SPIN_STEP = 30.0f; // RPM per key press
-const float MAX_SPIN = 5000.0f; // Maximum spin in RPM (realistic for tennis)
-const float MIN_SPIN = -5000.0f; // Maximum backspin in RPM
+
+// Configurable settings (loaded from settings.ini)
+float DEFAULT_HORIZONTAL_FORCE = 270.0f; // Newtons
+float DEFAULT_ANGLE = 39.0f; // degrees
+float ANGLE_STEP = 3.0f; // degrees per scroll
+float DEFAULT_SPIN = 120.0f; // RPM
+float SPIN_STEP = 60.0f; // RPM per key press
+float MAX_SPIN = 9000.0f; // Maximum spin in RPM
+float MIN_SPIN = -3000.0f; // Minimum backspin in RPM
+float DEFAULT_PACE = 2.0f; // Visual pace multiplier (2.0 = 200%)
+
+// Function to load settings from INI file
+void LoadSettings() {
+    wchar_t exePath[MAX_PATH];
+    GetModuleFileNameW(NULL, exePath, MAX_PATH);
+    std::wstring exeDir(exePath);
+    size_t lastSlash = exeDir.find_last_of(L"\\");
+    if (lastSlash != std::wstring::npos) {
+        exeDir = exeDir.substr(0, lastSlash + 1);
+    }
+    std::wstring iniPath = exeDir + L"settings.ini";
+    
+    // Load settings with defaults
+    DEFAULT_HORIZONTAL_FORCE = GetPrivateProfileIntW(L"Physics", L"DefaultForce", 270, iniPath.c_str());
+    DEFAULT_ANGLE = GetPrivateProfileIntW(L"Physics", L"DefaultAngle", 39, iniPath.c_str());
+    ANGLE_STEP = GetPrivateProfileIntW(L"Physics", L"AngleStep", 3, iniPath.c_str());
+    DEFAULT_SPIN = GetPrivateProfileIntW(L"Physics", L"DefaultSpin", 120, iniPath.c_str());
+    SPIN_STEP = GetPrivateProfileIntW(L"Physics", L"SpinStep", 60, iniPath.c_str());
+    MIN_SPIN = GetPrivateProfileIntW(L"Physics", L"MinSpin", -3000, iniPath.c_str());
+    MAX_SPIN = GetPrivateProfileIntW(L"Physics", L"MaxSpin", 9000, iniPath.c_str());
+    DEFAULT_PACE = GetPrivateProfileIntW(L"Physics", L"DefaultPace", 200, iniPath.c_str()) / 100.0f; // Convert percentage to multiplier
+}
 
 // Air resistance modes
 enum AirResistanceMode {
@@ -158,7 +188,9 @@ public:
     }
     
     void resetForHorizontalShot(float horizontalForce, float angleDegrees, float spin) {
-        x = 0.0f; // Start from left side
+        // LEFTY position: 20 pixels from left court edge
+        // Convert 20 pixels to meters based on court scaling
+        x = (20.0f / (WINDOW_WIDTH - 100.0f)) * COURT_LENGTH; // Start from LEFTY position
         y = 1.0f; // Start at net height
         // Map force (0-1000N) to realistic tennis velocities (0-50 m/s)
         // Professional tennis serves: 50-70 m/s, groundstrokes: 20-40 m/s
@@ -284,12 +316,18 @@ private:
     AirResistanceMode airResistanceMode;
     D2D1_RECT_F comboBoxRect;
     
+    // Auto-relaunch state
+    bool waitingToRelaunch;
+    float relaunchTimer;
+    const float RELAUNCH_DELAY = 2.0f; // 2 seconds
+    
 public:
     D2DApp() : hwnd(NULL), pFactory(NULL), pRenderTarget(NULL), 
                pDWriteFactory(NULL), pTextFormat(NULL), pSmallTextFormat(NULL),
                pBrush(NULL), simulationStarted(false), simulationComplete(false),
-               currentScreen(MODE_ALL), horizontalForce(500.0f), launchAngle(0.0f),
-               ballSpin(0.0f), visualPaceMultiplier(1.0f), airResistanceMode(AIR_SEA_LEVEL) {
+               currentScreen(MODE_ALL), horizontalForce(DEFAULT_HORIZONTAL_FORCE), launchAngle(DEFAULT_ANGLE),
+               ballSpin(DEFAULT_SPIN), visualPaceMultiplier(DEFAULT_PACE), airResistanceMode(AIR_SEA_LEVEL),
+               waitingToRelaunch(false), relaunchTimer(0.0f) {
         for (int i = 0; i < 4; i++) {
             balls[i] = new TennisBall(&courts[i]);
         }
@@ -388,6 +426,8 @@ public:
     void StartSimulation() {
         simulationStarted = true;
         simulationComplete = false;
+        waitingToRelaunch = false;
+        relaunchTimer = 0.0f;
         
         if (currentScreen == MODE_ALL) {
             for (int i = 0; i < 4; i++) {
@@ -424,24 +464,132 @@ public:
                 simulationComplete = true;
             }
         } else if (currentScreen == MODE_CLAY) {
-            clayBall->update(adjustedDT);
-            if (!clayBall->isActive) {
-                simulationComplete = true;
+            // Check if ball reached right end of court or stopped moving
+            if (clayBall->isActive && clayBall->x >= COURT_LENGTH) {
+                clayBall->isActive = false;
+                waitingToRelaunch = true;
+                relaunchTimer = 0.0f;
+            }
+            
+            // Handle relaunch timer
+            if (waitingToRelaunch) {
+                relaunchTimer += adjustedDT;
+                if (relaunchTimer >= RELAUNCH_DELAY) {
+                    // Random force: 200-400N
+                    float randomForce = 200.0f + (rand() % 201);
+                    // Random angle: 9-39 degrees
+                    float randomAngle = 9.0f + (rand() % 31);
+                    // Random spin: 60-600 RPM
+                    float randomSpin = 60.0f + (rand() % 541);
+                    
+                    clayBall->setAirResistance(airModes[airResistanceMode].coefficient);
+                    clayBall->resetForHorizontalShot(randomForce, randomAngle, randomSpin);
+                    waitingToRelaunch = false;
+                    relaunchTimer = 0.0f;
+                }
+            } else {
+                clayBall->update(adjustedDT);
+                // Check if ball stopped moving
+                if (!clayBall->isActive) {
+                    waitingToRelaunch = true;
+                    relaunchTimer = 0.0f;
+                }
             }
         } else if (currentScreen == MODE_GRASS) {
-            grassBall->update(adjustedDT);
-            if (!grassBall->isActive) {
-                simulationComplete = true;
+            // Check if ball reached right end of court or stopped moving
+            if (grassBall->isActive && grassBall->x >= COURT_LENGTH) {
+                grassBall->isActive = false;
+                waitingToRelaunch = true;
+                relaunchTimer = 0.0f;
+            }
+            
+            // Handle relaunch timer
+            if (waitingToRelaunch) {
+                relaunchTimer += adjustedDT;
+                if (relaunchTimer >= RELAUNCH_DELAY) {
+                    // Random force: 200-400N
+                    float randomForce = 200.0f + (rand() % 201);
+                    // Random angle: 9-39 degrees
+                    float randomAngle = 9.0f + (rand() % 31);
+                    // Random spin: 60-600 RPM
+                    float randomSpin = 60.0f + (rand() % 541);
+                    
+                    grassBall->setAirResistance(airModes[airResistanceMode].coefficient);
+                    grassBall->resetForHorizontalShot(randomForce, randomAngle, randomSpin);
+                    waitingToRelaunch = false;
+                    relaunchTimer = 0.0f;
+                }
+            } else {
+                grassBall->update(adjustedDT);
+                // Check if ball stopped moving
+                if (!grassBall->isActive) {
+                    waitingToRelaunch = true;
+                    relaunchTimer = 0.0f;
+                }
             }
         } else if (currentScreen == MODE_HARD) {
-            hardBall->update(adjustedDT);
-            if (!hardBall->isActive) {
-                simulationComplete = true;
+            // Check if ball reached right end of court or stopped moving
+            if (hardBall->isActive && hardBall->x >= COURT_LENGTH) {
+                hardBall->isActive = false;
+                waitingToRelaunch = true;
+                relaunchTimer = 0.0f;
+            }
+            
+            // Handle relaunch timer
+            if (waitingToRelaunch) {
+                relaunchTimer += adjustedDT;
+                if (relaunchTimer >= RELAUNCH_DELAY) {
+                    // Random force: 200-400N
+                    float randomForce = 200.0f + (rand() % 201);
+                    // Random angle: 9-39 degrees
+                    float randomAngle = 9.0f + (rand() % 31);
+                    // Random spin: 60-600 RPM
+                    float randomSpin = 60.0f + (rand() % 541);
+                    
+                    hardBall->setAirResistance(airModes[airResistanceMode].coefficient);
+                    hardBall->resetForHorizontalShot(randomForce, randomAngle, randomSpin);
+                    waitingToRelaunch = false;
+                    relaunchTimer = 0.0f;
+                }
+            } else {
+                hardBall->update(adjustedDT);
+                // Check if ball stopped moving
+                if (!hardBall->isActive) {
+                    waitingToRelaunch = true;
+                    relaunchTimer = 0.0f;
+                }
             }
         } else if (currentScreen == MODE_LAVER) {
-            laverBall->update(adjustedDT);
-            if (!laverBall->isActive) {
-                simulationComplete = true;
+            // Check if ball reached right end of court or stopped moving
+            if (laverBall->isActive && laverBall->x >= COURT_LENGTH) {
+                laverBall->isActive = false;
+                waitingToRelaunch = true;
+                relaunchTimer = 0.0f;
+            }
+            
+            // Handle relaunch timer
+            if (waitingToRelaunch) {
+                relaunchTimer += adjustedDT;
+                if (relaunchTimer >= RELAUNCH_DELAY) {
+                    // Random force: 200-400N
+                    float randomForce = 200.0f + (rand() % 201);
+                    // Random angle: 9-39 degrees
+                    float randomAngle = 9.0f + (rand() % 31);
+                    // Random spin: 60-600 RPM
+                    float randomSpin = 60.0f + (rand() % 541);
+                    
+                    laverBall->setAirResistance(airModes[airResistanceMode].coefficient);
+                    laverBall->resetForHorizontalShot(randomForce, randomAngle, randomSpin);
+                    waitingToRelaunch = false;
+                    relaunchTimer = 0.0f;
+                }
+            } else {
+                laverBall->update(adjustedDT);
+                // Check if ball stopped moving
+                if (!laverBall->isActive) {
+                    waitingToRelaunch = true;
+                    relaunchTimer = 0.0f;
+                }
             }
         }
     }
@@ -544,7 +692,13 @@ public:
                 10.0f * zoomFactor, 10.0f * zoomFactor // Scale ball size with zoom
             );
             pRenderTarget->FillEllipse(ballEllipse, pBrush);
+            
+            // Draw BALL label
+            DrawBallLabel(ballPixelX, ballPixelY, zoomFactor);
         }
+        
+        // Draw court labels (NET, LEFTY, RIGHTY)
+        DrawCourtLabels(courtMargin, courtPixelWidth, courtTop, courtBottom, zoomFactor);
         
         // Draw title
         pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
@@ -649,7 +803,13 @@ public:
                 10.0f * zoomFactor, 10.0f * zoomFactor // Scale ball size with zoom
             );
             pRenderTarget->FillEllipse(ballEllipse, pBrush);
+            
+            // Draw BALL label
+            DrawBallLabel(ballPixelX, ballPixelY, zoomFactor);
         }
+        
+        // Draw court labels (NET, LEFTY, RIGHTY)
+        DrawCourtLabels(courtMargin, courtPixelWidth, courtTop, courtBottom, zoomFactor);
         
         // Draw title
         pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
@@ -754,7 +914,13 @@ public:
                 10.0f * zoomFactor, 10.0f * zoomFactor // Scale ball size with zoom
             );
             pRenderTarget->FillEllipse(ballEllipse, pBrush);
+            
+            // Draw BALL label
+            DrawBallLabel(ballPixelX, ballPixelY, zoomFactor);
         }
+        
+        // Draw court labels (NET, LEFTY, RIGHTY)
+        DrawCourtLabels(courtMargin, courtPixelWidth, courtTop, courtBottom, zoomFactor);
         
         // Draw title
         pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
@@ -859,7 +1025,13 @@ public:
                 10.0f * zoomFactor, 10.0f * zoomFactor // Scale ball size with zoom
             );
             pRenderTarget->FillEllipse(ballEllipse, pBrush);
+            
+            // Draw BALL label
+            DrawBallLabel(ballPixelX, ballPixelY, zoomFactor);
         }
+        
+        // Draw court labels (NET, LEFTY, RIGHTY)
+        DrawCourtLabels(courtMargin, courtPixelWidth, courtTop, courtBottom, zoomFactor);
         
         // Draw title
         pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
@@ -909,6 +1081,39 @@ public:
         
         // Draw air resistance combo box
         DrawComboBox();
+    }
+    
+    void DrawCourtLabels(float courtMargin, float courtPixelWidth, float courtTop, float courtBottom, float zoomFactor) {
+        // Labels: NET, BALL, LEFTY, RIGHTY are defined but not rendered on screen
+        // NET - white net in the center
+        // LEFTY - launcher 20 pixels from left court edge (green icon)
+        // RIGHTY - ball hitter 20 pixels from right court edge (red icon)
+        // BALL - tennis ball
+        
+        // Draw LEFTY icon (small rectangle representing launcher) - 20 pixels from left edge
+        float netX = courtMargin + courtPixelWidth / 2.0f;
+        pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::Green));
+        D2D1_RECT_F leftyIcon = D2D1::RectF(
+            courtMargin + 20.0f,
+            courtBottom - 10.0f * zoomFactor,
+            courtMargin + 25.0f,
+            courtBottom
+        );
+        pRenderTarget->FillRectangle(leftyIcon, pBrush);
+        
+        // Draw RIGHTY icon (small rectangle representing hitter) - 20 pixels from right edge
+        pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::Red));
+        D2D1_RECT_F rightyIcon = D2D1::RectF(
+            courtMargin + courtPixelWidth - 25.0f,
+            courtBottom - 10.0f * zoomFactor,
+            courtMargin + courtPixelWidth - 20.0f,
+            courtBottom
+        );
+        pRenderTarget->FillRectangle(rightyIcon, pBrush);
+    }
+    
+    void DrawBallLabel(float ballPixelX, float ballPixelY, float zoomFactor) {
+        // BALL label is defined but not rendered on screen
     }
     
     void DrawComboBox() {
@@ -1457,6 +1662,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
 // Main entry point
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
+    // Seed random number generator
+    srand((unsigned int)time(NULL));
+    
+    // Load settings from INI file
+    LoadSettings();
+    
     // Register window class
     const wchar_t CLASS_NAME[] = L"TennisBallPhysicsSimulator";
     

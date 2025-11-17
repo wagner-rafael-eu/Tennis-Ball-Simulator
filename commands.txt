@@ -1,6 +1,19 @@
 TENNIS BALL SIMULATOR - KEYBOARD COMMANDS
 ==========================================
 
+CONFIGURATION FILE
+------------------
+The simulator reads settings from settings.ini file located in the same directory as the executable.
+You can modify the following settings:
+  • DefaultForce - Initial horizontal force in Newtons (0-1000, default: 270)
+  • DefaultAngle - Initial launch angle in degrees (0-90, default: 39)
+  • AngleStep - Angle adjustment increment in degrees (default: 3)
+  • DefaultSpin - Initial ball spin in RPM (-3000 to +9000, default: 120)
+  • SpinStep - Spin adjustment increment in RPM (default: 60)
+  • MinSpin - Minimum allowed spin in RPM (default: -3000)
+  • MaxSpin - Maximum allowed spin in RPM (default: +9000)
+  • DefaultPace - Initial visual pace in percentage (default: 200 = 2x speed)
+
 SCREEN NAVIGATION
 -----------------
 BACKSPACE - Return to All Courts View (SCREEN_ALL)
@@ -16,10 +29,10 @@ R - Reset simulation
 
 CLAY & GRASS & HARD & LAVER COURT CONTROLS (SCREEN_CLAY & SCREEN_GRASS & SCREEN_HARD & SCREEN_LAVER)
 -----------------------------------------------------------------------------------------------------
-W key - Increase launch angle (+1° per press)
+W key - Increase launch angle (+step per press, configurable via AngleStep in settings.ini)
         Range: 0-90°
 
-S key - Decrease launch angle (-1° per press)
+S key - Decrease launch angle (-step per press, configurable via AngleStep in settings.ini)
         Range: 0-90°
 
 D key - Increase horizontal force (+10N per press)
@@ -28,10 +41,10 @@ D key - Increase horizontal force (+10N per press)
 A key - Decrease horizontal force (-10N per press)
         Range: 0-1000N
 
-MOUSE SCROLL UP - Increase launch angle (+1° per scroll)
+MOUSE SCROLL UP - Increase launch angle (+step per scroll, configurable via AngleStep in settings.ini)
                   Range: 0-90°
                   
-MOUSE SCROLL DOWN - Decrease launch angle (-1° per scroll)
+MOUSE SCROLL DOWN - Decrease launch angle (-step per scroll, configurable via AngleStep in settings.ini)
                     Range: 0-90°
 
 UP ARROW - Increase horizontal force (+10N per press)
@@ -40,20 +53,20 @@ UP ARROW - Increase horizontal force (+10N per press)
 DOWN ARROW - Decrease horizontal force (-10N per press)
              Range: 0-1000N
 
-CTRL + + - Add topspin (+30 RPM per press)
-           Range: 0 to +5000 RPM
+CTRL + + - Add topspin (+step per press, configurable via SpinStep in settings.ini)
+           Range: MinSpin to MaxSpin RPM (configurable in settings.ini)
            Effect: Ball curves downward, kicks forward on bounce
 
-> key - Add topspin (+30 RPM per press)
-        Range: 0 to +5000 RPM
+> key - Add topspin (+step per press, configurable via SpinStep in settings.ini)
+        Range: MinSpin to MaxSpin RPM (configurable in settings.ini)
         Effect: Ball curves downward, kicks forward on bounce
            
-CTRL + - - Add backspin (-30 RPM per press)
-           Range: 0 to -5000 RPM
+CTRL + - - Add backspin (-step per press, configurable via SpinStep in settings.ini)
+           Range: MinSpin to MaxSpin RPM (configurable in settings.ini)
            Effect: Ball floats upward, checks up on bounce
 
-< key - Add backspin (-30 RPM per press)
-        Range: 0 to -5000 RPM
+< key - Add backspin (-step per press, configurable via SpinStep in settings.ini)
+        Range: MinSpin to MaxSpin RPM (configurable in settings.ini)
         Effect: Ball floats upward, checks up on bounce
 
 + (Plus key) - Increase visual pace (+10% per press)
@@ -72,10 +85,13 @@ LEFT CLICK on Air Resistance Combo Box - Cycle through air resistance modes:
 
 PHYSICS PARAMETERS
 ------------------
-Force: 0-1000N → Maps to 0-50 m/s ball velocity
-Angle: 0° (horizontal) to 90° (vertical)
-Spin: -5000 RPM (backspin) to +5000 RPM (topspin)
-Visual Pace: 0.1x to 10x simulation speed
+Force: 0-1000N → Maps to 0-50 m/s ball velocity (default: 270N, configurable)
+Angle: 0° (horizontal) to 90° (vertical) (default: 39°, configurable)
+Angle Step: Configurable via settings.ini (default: 3°)
+Spin: MinSpin to MaxSpin RPM (default: -3000 to +9000 RPM, configurable)
+Default Spin: Configurable via settings.ini (default: 120 RPM topspin)
+Spin Step: Configurable via settings.ini (default: 60 RPM)
+Visual Pace: 0.1x to 10x simulation speed (default: 2.0x = 200%, configurable)
 Frame Rate: 120 FPS
 
 COURT PHYSICS
