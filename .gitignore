@@ -1,0 +1,19 @@
+# Ignore build outputs
+build/
+TennisBallSimulator.exe
+*.obj
+*.pdb
+*.ilk
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.opendb
+
+# Temp files
+*.tmp
+*.log
