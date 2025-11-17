@@ -1,0 +1,119 @@
+TENNIS BALL SIMULATOR - KEYBOARD COMMANDS
+==========================================
+
+SCREEN NAVIGATION
+-----------------
+BACKSPACE - Return to All Courts View (SCREEN_ALL)
+C - Switch to Clay Court View (SCREEN_CLAY)
+G - Switch to Grass Court View (SCREEN_GRASS)
+H - Switch to Hard Court View (SCREEN_HARD)
+L - Switch to Laver Cup View (SCREEN_LAVER)
+
+SIMULATION CONTROL
+------------------
+SPACE - Start simulation
+R - Reset simulation
+
+CLAY & GRASS & HARD & LAVER COURT CONTROLS (SCREEN_CLAY & SCREEN_GRASS & SCREEN_HARD & SCREEN_LAVER)
+-----------------------------------------------------------------------------------------------------
+W key - Increase launch angle (+1° per press)
+        Range: 0-90°
+
+S key - Decrease launch angle (-1° per press)
+        Range: 0-90°
+
+D key - Increase horizontal force (+10N per press)
+        Range: 0-1000N
+           
+A key - Decrease horizontal force (-10N per press)
+        Range: 0-1000N
+
+MOUSE SCROLL UP - Increase launch angle (+1° per scroll)
+                  Range: 0-90°
+                  
+MOUSE SCROLL DOWN - Decrease launch angle (-1° per scroll)
+                    Range: 0-90°
+
+UP ARROW - Increase horizontal force (+10N per press)
+           Range: 0-1000N
+           
+DOWN ARROW - Decrease horizontal force (-10N per press)
+             Range: 0-1000N
+
+CTRL + + - Add topspin (+30 RPM per press)
+           Range: 0 to +5000 RPM
+           Effect: Ball curves downward, kicks forward on bounce
+
+> key - Add topspin (+30 RPM per press)
+        Range: 0 to +5000 RPM
+        Effect: Ball curves downward, kicks forward on bounce
+           
+CTRL + - - Add backspin (-30 RPM per press)
+           Range: 0 to -5000 RPM
+           Effect: Ball floats upward, checks up on bounce
+
+< key - Add backspin (-30 RPM per press)
+        Range: 0 to -5000 RPM
+        Effect: Ball floats upward, checks up on bounce
+
++ (Plus key) - Increase visual pace (+10% per press)
+               Range: 10%-1000% (0.1x to 10x speed)
+               
+- (Minus key) - Decrease visual pace (-10% per press)
+                Range: 10%-1000% (0.1x to 10x speed)
+
+MOUSE CONTROLS
+--------------
+LEFT CLICK on Air Resistance Combo Box - Cycle through air resistance modes:
+  • Vacuum (no air resistance)
+  • Sea Level (standard atmospheric conditions)
+  • 1000m altitude (~10% less air resistance)
+  • 2000m altitude (~22% less air resistance)
+
+PHYSICS PARAMETERS
+------------------
+Force: 0-1000N → Maps to 0-50 m/s ball velocity
+Angle: 0° (horizontal) to 90° (vertical)
+Spin: -5000 RPM (backspin) to +5000 RPM (topspin)
+Visual Pace: 0.1x to 10x simulation speed
+Frame Rate: 120 FPS
+
+COURT PHYSICS
+-------------
+Clay Court (Roland Garros):
+  • Coefficient of Restitution: 0.75 (higher bounce)
+  • Friction: 0.6 (slower surface)
+  • Color: Orange clay
+  • Ball: Yellow
+
+Grass Court (Wimbledon):
+  • Coefficient of Restitution: 0.70 (lower bounce)
+  • Friction: 0.4 (faster surface)
+  • Color: Green grass
+  • Ball: Bright green
+
+Hard Court (US Open):
+  • Coefficient of Restitution: 0.73 (medium bounce)
+  • Friction: 0.5 (medium surface)
+  • Color: Blue hard court
+  • Ball: Yellow
+
+Laver Cup (Black Court):
+  • Coefficient of Restitution: 0.73 (medium bounce)
+  • Friction: 0.5 (medium surface)
+  • Color: Black court
+  • Ball: Yellow
+
+SPIN EFFECTS
+------------
+Topspin (Positive RPM):
+  • Magnus effect curves ball downward
+  • Increases forward velocity on bounce
+  • Ball dips faster and kicks forward
+
+Backspin (Negative RPM):
+  • Magnus effect lifts ball upward
+  • Decreases forward velocity on bounce
+  • Ball floats longer and checks up on landing
+
+Spin decays to 70% of original value after each bounce

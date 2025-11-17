@@ -16,6 +16,22 @@
 #pragma comment(lib, "d2d1")
 #pragma comment(lib, "dwrite")
 
+// Screen identifiers
+const char* SCREEN_ALL = "All Courts View";
+const char* SCREEN_CLAY = "Clay Court View";
+const char* SCREEN_GRASS = "Grass Court View";
+const char* SCREEN_HARD = "Hard Court View";
+const char* SCREEN_LAVER = "Laver Cup View";
+
+// Screen state
+enum ScreenMode {
+    MODE_ALL,
+    MODE_CLAY,
+    MODE_GRASS,
+    MODE_HARD,
+    MODE_LAVER
+};
+
 // Constants
 const float GRAVITY = 9.81f; // m/s^2
 const float BALL_RADIUS = 0.0335f; // Tennis ball radius in meters (6.7cm diameter)
@@ -24,7 +40,47 @@ const float PIXELS_PER_METER = 100.0f; // Scaling factor for visualization
 const int WINDOW_WIDTH = 640;
 const int WINDOW_HEIGHT = 480;
 const int SECTION_WIDTH = WINDOW_WIDTH / 4;
-const float DT = 0.016f; // ~60 FPS
+const float DT = 0.0083f; // ~120 FPS
+
+// Clay court specific constants
+const float COURT_WIDTH = 23.77f; // Tennis court width in meters (singles)
+const float COURT_LENGTH = 23.77f; // Tennis court length in meters
+const float NET_HEIGHT = 0.914f; // Net height at center in meters
+const float BALL_MASS = 0.058f; // Tennis ball mass in kg
+const float MIN_HORIZONTAL_FORCE = 0.0f; // Newtons
+const float MAX_HORIZONTAL_FORCE = 1000.0f; // Newtons
+const float MIN_ANGLE = 0.0f; // degrees
+const float MAX_ANGLE = 90.0f; // degrees
+const float ANGLE_STEP = 1.0f; // degrees per scroll
+const float SPIN_STEP = 30.0f; // RPM per key press
+const float MAX_SPIN = 5000.0f; // Maximum spin in RPM (realistic for tennis)
+const float MIN_SPIN = -5000.0f; // Maximum backspin in RPM
+
+// Air resistance modes
+enum AirResistanceMode {
+    AIR_VACUUM,
+    AIR_SEA_LEVEL,
+    AIR_1000M,
+    AIR_2000M
+};
+
+struct AirResistanceData {
+    AirResistanceMode mode;
+    const wchar_t* name;
+    float coefficient;
+};
+
+// Air resistance coefficients based on altitude
+// Coefficient formula: 0.5 * Cd * rho * A, where:
+// Cd ~= 0.5 (drag coefficient for sphere)
+// A = pi * r^2 ~= 0.00352 m^2 (tennis ball cross-section)
+// rho varies with altitude
+AirResistanceData airModes[4] = {
+    {AIR_VACUUM, L"Vacuum (no air)", 0.0f},
+    {AIR_SEA_LEVEL, L"Sea Level", 0.0005f},      // rho = 1.225 kg/m^3
+    {AIR_1000M, L"1000m altitude", 0.00044f},    // rho = 1.112 kg/m^3 (90% of sea level)
+    {AIR_2000M, L"2000m altitude", 0.00039f}     // rho = 1.007 kg/m^3 (82% of sea level)
+};
 
 // Court surface properties
 enum CourtType {
@@ -69,21 +125,29 @@ class TennisBall {
 public:
     float y;              // Height in meters
     float vy;             // Vertical velocity in m/s
+    float x;              // Horizontal position in meters
+    float vx;             // Horizontal velocity in m/s
     float time;           // Elapsed time in seconds
     int bounceCount;
     bool isActive;
     CourtSurface* surface;
+    float airResistanceCoeff; // Air resistance coefficient
+    float spinRPM;        // Ball spin in revolutions per minute (positive = topspin, negative = backspin)
     std::vector<BounceData> trajectory;
     std::vector<BounceData> bounces;
     
     TennisBall(CourtSurface* courtSurface) {
         surface = courtSurface;
+        airResistanceCoeff = 0.0f;
+        spinRPM = 0.0f;
         reset();
     }
     
     void reset() {
         y = INITIAL_HEIGHT;
         vy = 0.0f;
+        x = 0.0f;
+        vx = 0.0f;
         time = 0.0f;
         bounceCount = 0;
         isActive = true;
@@ -93,6 +157,31 @@ public:
         trajectory.push_back({time, y});
     }
     
+    void resetForHorizontalShot(float horizontalForce, float angleDegrees, float spin) {
+        x = 0.0f; // Start from left side
+        y = 1.0f; // Start at net height
+        // Map force (0-1000N) to realistic tennis velocities (0-50 m/s)
+        // Professional tennis serves: 50-70 m/s, groundstrokes: 20-40 m/s
+        float totalVelocity = (horizontalForce / MAX_HORIZONTAL_FORCE) * 50.0f;
+        
+        // Convert angle to radians and calculate velocity components
+        float angleRad = angleDegrees * 3.14159265f / 180.0f;
+        vx = totalVelocity * cos(angleRad);
+        vy = totalVelocity * sin(angleRad);
+        
+        spinRPM = spin;
+        time = 0.0f;
+        bounceCount = 0;
+        isActive = true;
+        trajectory.clear();
+        bounces.clear();
+        trajectory.push_back({time, y});
+    }
+    
+    void setAirResistance(float coefficient) {
+        airResistanceCoeff = coefficient;
+    }
+    
     void update(float dt) {
         if (!isActive) return;
         
@@ -100,7 +189,33 @@ public:
         
         // Physics update
         vy -= GRAVITY * dt;  // Apply gravity
+        
+        // Magnus effect from spin
+        // Convert RPM to rad/s: omega = RPM * 2*pi / 60
+        float omega = spinRPM * 2.0f * 3.14159265f / 60.0f;
+        // Magnus force coefficient: Cl ~= 0.3 for tennis ball
+        // Magnus force = 0.5 * Cl * rho * A * r * omega * v
+        // Simplified: F_magnus = k * omega * v, where k incorporates constants
+        float magnusCoeff = 0.00015f; // Tuned coefficient
+        float ballSpeed = sqrt(vx * vx + vy * vy);
+        
+        if (ballSpeed > 0.1f) {
+            // Magnus force perpendicular to velocity
+            // Topspin (positive) curves down, backspin (negative) curves up
+            float magnusForce = magnusCoeff * omega * ballSpeed;
+            float magnusAccelY = magnusForce / BALL_MASS;
+            
+            // Apply Magnus acceleration (perpendicular to velocity direction)
+            vy -= magnusAccelY * dt;
+        }
+        
         y += vy * dt;        // Update position
+        
+        // Horizontal physics with air resistance
+        float airResistanceForce = -airResistanceCoeff * vx * fabs(vx);
+        float ax = airResistanceForce / BALL_MASS;
+        vx += ax * dt;
+        x += vx * dt;
         
         // Record trajectory
         trajectory.push_back({time, y});
@@ -116,6 +231,14 @@ public:
             
             // Apply coefficient of restitution
             vy = -vy * surface->coefficientOfRestitution;
+            vx *= 0.8f; // Horizontal velocity reduction on bounce
+            
+            // Spin affects bounce: topspin increases forward velocity, backspin decreases it
+            float spinEffect = (spinRPM / 5000.0f) * 2.0f; // Normalized spin effect
+            vx += spinEffect;
+            
+            // Spin decays on bounce
+            spinRPM *= 0.7f;
             
             bounceCount++;
             
@@ -123,7 +246,13 @@ public:
             if (fabs(vy) < 0.1f || bounceCount > 10) {
                 isActive = false;
                 vy = 0.0f;
+                vx = 0.0f;
             }
+        }
+        
+        // Stop if ball goes out of bounds horizontally
+        if (x < 0.0f || x > COURT_LENGTH) {
+            isActive = false;
         }
     }
 };
@@ -143,13 +272,34 @@ private:
     bool simulationStarted;
     bool simulationComplete;
     
+    ScreenMode currentScreen;
+    TennisBall* clayBall;
+    TennisBall* grassBall;
+    TennisBall* hardBall;
+    TennisBall* laverBall;
+    float horizontalForce;
+    float launchAngle; // Launch angle in degrees
+    float ballSpin; // Ball spin in RPM
+    float visualPaceMultiplier; // Visual speed multiplier
+    AirResistanceMode airResistanceMode;
+    D2D1_RECT_F comboBoxRect;
+    
 public:
     D2DApp() : hwnd(NULL), pFactory(NULL), pRenderTarget(NULL), 
                pDWriteFactory(NULL), pTextFormat(NULL), pSmallTextFormat(NULL),
-               pBrush(NULL), simulationStarted(false), simulationComplete(false) {
+               pBrush(NULL), simulationStarted(false), simulationComplete(false),
+               currentScreen(MODE_ALL), horizontalForce(500.0f), launchAngle(0.0f),
+               ballSpin(0.0f), visualPaceMultiplier(1.0f), airResistanceMode(AIR_SEA_LEVEL) {
         for (int i = 0; i < 4; i++) {
             balls[i] = new TennisBall(&courts[i]);
         }
+        clayBall = new TennisBall(&courts[0]); // Use clay court properties
+        grassBall = new TennisBall(&courts[1]); // Use grass court properties
+        hardBall = new TennisBall(&courts[2]); // Use hard court properties
+        laverBall = new TennisBall(&courts[3]); // Use Laver Cup properties
+        
+        // Initialize combo box position
+        comboBoxRect = D2D1::RectF(10, 420, 200, 445);
     }
     
     ~D2DApp() {
@@ -162,6 +312,10 @@ public:
         for (int i = 0; i < 4; i++) {
             delete balls[i];
         }
+        delete clayBall;
+        delete grassBall;
+        delete hardBall;
+        delete laverBall;
     }
     
     template <class T>
@@ -234,22 +388,61 @@ public:
     void StartSimulation() {
         simulationStarted = true;
         simulationComplete = false;
-        for (int i = 0; i < 4; i++) {
-            balls[i]->reset();
+        
+        if (currentScreen == MODE_ALL) {
+            for (int i = 0; i < 4; i++) {
+                balls[i]->reset();
+            }
+        } else if (currentScreen == MODE_CLAY) {
+            clayBall->setAirResistance(airModes[airResistanceMode].coefficient);
+            clayBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+        } else if (currentScreen == MODE_GRASS) {
+            grassBall->setAirResistance(airModes[airResistanceMode].coefficient);
+            grassBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+        } else if (currentScreen == MODE_HARD) {
+            hardBall->setAirResistance(airModes[airResistanceMode].coefficient);
+            hardBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+        } else if (currentScreen == MODE_LAVER) {
+            laverBall->setAirResistance(airModes[airResistanceMode].coefficient);
+            laverBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
         }
     }
     
     void Update() {
         if (!simulationStarted || simulationComplete) return;
         
-        bool anyActive = false;
-        for (int i = 0; i < 4; i++) {
-            balls[i]->update(DT);
-            if (balls[i]->isActive) anyActive = true;
-        }
+        float adjustedDT = DT * visualPaceMultiplier;
         
-        if (!anyActive) {
-            simulationComplete = true;
+        if (currentScreen == MODE_ALL) {
+            bool anyActive = false;
+            for (int i = 0; i < 4; i++) {
+                balls[i]->update(adjustedDT);
+                if (balls[i]->isActive) anyActive = true;
+            }
+            
+            if (!anyActive) {
+                simulationComplete = true;
+            }
+        } else if (currentScreen == MODE_CLAY) {
+            clayBall->update(adjustedDT);
+            if (!clayBall->isActive) {
+                simulationComplete = true;
+            }
+        } else if (currentScreen == MODE_GRASS) {
+            grassBall->update(adjustedDT);
+            if (!grassBall->isActive) {
+                simulationComplete = true;
+            }
+        } else if (currentScreen == MODE_HARD) {
+            hardBall->update(adjustedDT);
+            if (!hardBall->isActive) {
+                simulationComplete = true;
+            }
+        } else if (currentScreen == MODE_LAVER) {
+            laverBall->update(adjustedDT);
+            if (!laverBall->isActive) {
+                simulationComplete = true;
+            }
         }
     }
     
@@ -259,6 +452,22 @@ public:
         pRenderTarget->BeginDraw();
         pRenderTarget->Clear(D2D1::ColorF(D2D1::ColorF::Black));
         
+        if (currentScreen == MODE_ALL) {
+            RenderAllCourts();
+        } else if (currentScreen == MODE_CLAY) {
+            RenderClayCourt();
+        } else if (currentScreen == MODE_GRASS) {
+            RenderGrassCourt();
+        } else if (currentScreen == MODE_HARD) {
+            RenderHardCourt();
+        } else if (currentScreen == MODE_LAVER) {
+            RenderLaverCourt();
+        }
+        
+        pRenderTarget->EndDraw();
+    }
+    
+    void RenderAllCourts() {
         // Draw each court section
         for (int i = 0; i < 4; i++) {
             float xOffset = i * SECTION_WIDTH;
@@ -273,15 +482,473 @@ public:
             pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
             D2D1_RECT_F textRect = D2D1::RectF(10, WINDOW_HEIGHT - 30, WINDOW_WIDTH - 10, WINDOW_HEIGHT - 10);
             pRenderTarget->DrawTextW(
-                L"Press SPACE to start simulation | Press R to reset",
-                52,
+                L"SPACE: Start | R: Reset | C: Clay | G: Grass | H: Hard | L: Laver",
+                68,
                 pTextFormat,
                 textRect,
                 pBrush
             );
         }
+    }
+    
+    void RenderClayCourt() {
+        const float courtMargin = 50.0f;
+        const float zoomFactor = 0.25f; // 4x wider court with 2x zoom out = 0.25 total
+        const float courtPixelWidth = (WINDOW_WIDTH - 2 * courtMargin) * 4.0f * zoomFactor; // 4x width with zoom
+        const float courtPixelHeight = 300.0f * zoomFactor;
+        const float courtTop = 240.0f;
+        const float courtBottom = courtTop + courtPixelHeight;
         
-        pRenderTarget->EndDraw();
+        // Draw clay court
+        pBrush->SetColor(courts[0].color); // Clay color
+        D2D1_RECT_F courtRect = D2D1::RectF(
+            courtMargin,
+            courtTop,
+            courtMargin + courtPixelWidth,
+            courtBottom
+        );
+        pRenderTarget->FillRectangle(courtRect, pBrush);
+        
+        // Draw court outline
+        pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
+        pRenderTarget->DrawRectangle(courtRect, pBrush, 2.0f);
+        
+        // Draw net in the middle
+        float netX = courtMargin + courtPixelWidth / 2.0f;
+        float netPixelHeight = NET_HEIGHT * 50.0f * zoomFactor; // Scale with zoom
+        
+        pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
+        D2D1_RECT_F netRect = D2D1::RectF(
+            netX - 2.0f,
+            courtBottom - netPixelHeight,
+            netX + 2.0f,
+            courtBottom
+        );
+        pRenderTarget->FillRectangle(netRect, pBrush);
+        
+        // Draw net top line
+        pRenderTarget->DrawLine(
+            D2D1::Point2F(netX - 10.0f, courtBottom - netPixelHeight),
+            D2D1::Point2F(netX + 10.0f, courtBottom - netPixelHeight),
+            pBrush, 2.0f
+        );
+        
+        // Draw ball if simulation started
+        if (simulationStarted && clayBall) {
+            float ballPixelX = courtMargin + (clayBall->x / COURT_LENGTH) * courtPixelWidth;
+            float ballPixelY = courtBottom - (clayBall->y * 50.0f * zoomFactor); // Scale with zoom
+            
+            pBrush->SetColor(courts[0].ballColor); // Yellow ball
+            D2D1_ELLIPSE ballEllipse = D2D1::Ellipse(
+                D2D1::Point2F(ballPixelX, ballPixelY),
+                10.0f * zoomFactor, 10.0f * zoomFactor // Scale ball size with zoom
+            );
+            pRenderTarget->FillEllipse(ballEllipse, pBrush);
+        }
+        
+        // Draw title
+        pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
+        D2D1_RECT_F titleRect = D2D1::RectF(10, 10, WINDOW_WIDTH - 10, 40);
+        pRenderTarget->DrawTextW(
+            L"Clay Court - Horizontal Shot",
+            30,
+            pTextFormat,
+            titleRect,
+            pBrush
+        );
+        
+        // Draw telemetry
+        if (simulationStarted && clayBall) {
+            wchar_t telemetry[512];
+            swprintf_s(telemetry, 
+                L"Time: %.2fs | X: %.2fm | Y: %.2fm | Vx: %.2fm/s | Vy: %.2fm/s\nForce: %.0fN | Angle: %.0f° | Spin: %.0f RPM | Pace: %.0f%% | Bounces: %d",
+                clayBall->time, clayBall->x, clayBall->y, clayBall->vx, clayBall->vy,
+                horizontalForce, launchAngle, clayBall->spinRPM, visualPaceMultiplier * 100.0f, clayBall->bounceCount);
+            
+            D2D1_RECT_F telemetryRect = D2D1::RectF(10, 40, WINDOW_WIDTH - 10, 90);
+            pRenderTarget->DrawTextW(
+                telemetry,
+                wcslen(telemetry),
+                pSmallTextFormat,
+                telemetryRect,
+                pBrush
+            );
+        }
+        
+        // Draw instructions
+        if (!simulationStarted) {
+            wchar_t instructions[256];
+            swprintf_s(instructions, 
+                L"SPACE: Start | R: Reset | UP/DOWN: Force (%.0fN) | SCROLL: Angle (%.0f°) | +/-: Pace (%.0f%%) | A: Back",
+                horizontalForce, launchAngle, visualPaceMultiplier * 100.0f);
+            
+            D2D1_RECT_F instructRect = D2D1::RectF(10, WINDOW_HEIGHT - 30, WINDOW_WIDTH - 10, WINDOW_HEIGHT - 10);
+            pRenderTarget->DrawTextW(
+                instructions,
+                wcslen(instructions),
+                pSmallTextFormat,
+                instructRect,
+                pBrush
+            );
+        }
+        
+        // Draw air resistance combo box
+        DrawComboBox();
+    }
+    
+    void RenderGrassCourt() {
+        const float courtMargin = 50.0f;
+        const float zoomFactor = 0.25f; // 4x wider court with 2x zoom out = 0.25 total
+        const float courtPixelWidth = (WINDOW_WIDTH - 2 * courtMargin) * 4.0f * zoomFactor; // 4x width with zoom
+        const float courtPixelHeight = 300.0f * zoomFactor;
+        const float courtTop = 240.0f;
+        const float courtBottom = courtTop + courtPixelHeight;
+        
+        // Draw grass court
+        pBrush->SetColor(courts[1].color); // Grass color
+        D2D1_RECT_F courtRect = D2D1::RectF(
+            courtMargin,
+            courtTop,
+            courtMargin + courtPixelWidth,
+            courtBottom
+        );
+        pRenderTarget->FillRectangle(courtRect, pBrush);
+        
+        // Draw court outline
+        pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
+        pRenderTarget->DrawRectangle(courtRect, pBrush, 2.0f);
+        
+        // Draw net in the middle
+        float netX = courtMargin + courtPixelWidth / 2.0f;
+        float netPixelHeight = NET_HEIGHT * 50.0f * zoomFactor; // Scale with zoom
+        
+        pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
+        D2D1_RECT_F netRect = D2D1::RectF(
+            netX - 2.0f,
+            courtBottom - netPixelHeight,
+            netX + 2.0f,
+            courtBottom
+        );
+        pRenderTarget->FillRectangle(netRect, pBrush);
+        
+        // Draw net top line
+        pRenderTarget->DrawLine(
+            D2D1::Point2F(netX - 10.0f, courtBottom - netPixelHeight),
+            D2D1::Point2F(netX + 10.0f, courtBottom - netPixelHeight),
+            pBrush, 2.0f
+        );
+        
+        // Draw ball if simulation started
+        if (simulationStarted && grassBall) {
+            float ballPixelX = courtMargin + (grassBall->x / COURT_LENGTH) * courtPixelWidth;
+            float ballPixelY = courtBottom - (grassBall->y * 50.0f * zoomFactor); // Scale with zoom
+            
+            pBrush->SetColor(courts[1].ballColor); // Bright green ball
+            D2D1_ELLIPSE ballEllipse = D2D1::Ellipse(
+                D2D1::Point2F(ballPixelX, ballPixelY),
+                10.0f * zoomFactor, 10.0f * zoomFactor // Scale ball size with zoom
+            );
+            pRenderTarget->FillEllipse(ballEllipse, pBrush);
+        }
+        
+        // Draw title
+        pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
+        D2D1_RECT_F titleRect = D2D1::RectF(10, 10, WINDOW_WIDTH - 10, 40);
+        pRenderTarget->DrawTextW(
+            L"Grass Court - Horizontal Shot",
+            31,
+            pTextFormat,
+            titleRect,
+            pBrush
+        );
+        
+        // Draw telemetry
+        if (simulationStarted && grassBall) {
+            wchar_t telemetry[512];
+            swprintf_s(telemetry, 
+                L"Time: %.2fs | X: %.2fm | Y: %.2fm | Vx: %.2fm/s | Vy: %.2fm/s\nForce: %.0fN | Angle: %.0f° | Spin: %.0f RPM | Pace: %.0f%% | Bounces: %d",
+                grassBall->time, grassBall->x, grassBall->y, grassBall->vx, grassBall->vy,
+                horizontalForce, launchAngle, grassBall->spinRPM, visualPaceMultiplier * 100.0f, grassBall->bounceCount);
+            
+            D2D1_RECT_F telemetryRect = D2D1::RectF(10, 40, WINDOW_WIDTH - 10, 90);
+            pRenderTarget->DrawTextW(
+                telemetry,
+                wcslen(telemetry),
+                pSmallTextFormat,
+                telemetryRect,
+                pBrush
+            );
+        }
+        
+        // Draw instructions
+        if (!simulationStarted) {
+            wchar_t instructions[300];
+            swprintf_s(instructions, 
+                L"SPACE: Start | R: Reset | W/S: Angle (%.0f°) | A/D: Force (%.0fN)\n>/<: Spin (%.0f RPM) | +/-: Pace (%.0f%%)",
+                launchAngle, horizontalForce, ballSpin, visualPaceMultiplier * 100.0f);
+            
+            D2D1_RECT_F instructRect = D2D1::RectF(10, WINDOW_HEIGHT - 30, WINDOW_WIDTH - 10, WINDOW_HEIGHT - 10);
+            pRenderTarget->DrawTextW(
+                instructions,
+                wcslen(instructions),
+                pSmallTextFormat,
+                instructRect,
+                pBrush
+            );
+        }
+        
+        // Draw air resistance combo box
+        DrawComboBox();
+    }
+    
+    void RenderHardCourt() {
+        const float courtMargin = 50.0f;
+        const float zoomFactor = 0.25f; // 4x wider court with 2x zoom out = 0.25 total
+        const float courtPixelWidth = (WINDOW_WIDTH - 2 * courtMargin) * 4.0f * zoomFactor; // 4x width with zoom
+        const float courtPixelHeight = 300.0f * zoomFactor;
+        const float courtTop = 240.0f;
+        const float courtBottom = courtTop + courtPixelHeight;
+        
+        // Draw hard court
+        pBrush->SetColor(courts[2].color); // Hard court color (blue)
+        D2D1_RECT_F courtRect = D2D1::RectF(
+            courtMargin,
+            courtTop,
+            courtMargin + courtPixelWidth,
+            courtBottom
+        );
+        pRenderTarget->FillRectangle(courtRect, pBrush);
+        
+        // Draw court outline
+        pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
+        pRenderTarget->DrawRectangle(courtRect, pBrush, 2.0f);
+        
+        // Draw net in the middle
+        float netX = courtMargin + courtPixelWidth / 2.0f;
+        float netPixelHeight = NET_HEIGHT * 50.0f * zoomFactor; // Scale with zoom
+        
+        pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
+        D2D1_RECT_F netRect = D2D1::RectF(
+            netX - 2.0f,
+            courtBottom - netPixelHeight,
+            netX + 2.0f,
+            courtBottom
+        );
+        pRenderTarget->FillRectangle(netRect, pBrush);
+        
+        // Draw net top line
+        pRenderTarget->DrawLine(
+            D2D1::Point2F(netX - 10.0f, courtBottom - netPixelHeight),
+            D2D1::Point2F(netX + 10.0f, courtBottom - netPixelHeight),
+            pBrush, 2.0f
+        );
+        
+        // Draw ball if simulation started
+        if (simulationStarted && hardBall) {
+            float ballPixelX = courtMargin + (hardBall->x / COURT_LENGTH) * courtPixelWidth;
+            float ballPixelY = courtBottom - (hardBall->y * 50.0f * zoomFactor); // Scale with zoom
+            
+            pBrush->SetColor(courts[2].ballColor); // Yellow ball
+            D2D1_ELLIPSE ballEllipse = D2D1::Ellipse(
+                D2D1::Point2F(ballPixelX, ballPixelY),
+                10.0f * zoomFactor, 10.0f * zoomFactor // Scale ball size with zoom
+            );
+            pRenderTarget->FillEllipse(ballEllipse, pBrush);
+        }
+        
+        // Draw title
+        pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
+        D2D1_RECT_F titleRect = D2D1::RectF(10, 10, WINDOW_WIDTH - 10, 40);
+        pRenderTarget->DrawTextW(
+            L"Hard Court - Horizontal Shot",
+            30,
+            pTextFormat,
+            titleRect,
+            pBrush
+        );
+        
+        // Draw telemetry
+        if (simulationStarted && hardBall) {
+            wchar_t telemetry[512];
+            swprintf_s(telemetry, 
+                L"Time: %.2fs | X: %.2fm | Y: %.2fm | Vx: %.2fm/s | Vy: %.2fm/s\nForce: %.0fN | Angle: %.0f\u00b0 | Spin: %.0f RPM | Pace: %.0f%% | Bounces: %d",
+                hardBall->time, hardBall->x, hardBall->y, hardBall->vx, hardBall->vy,
+                horizontalForce, launchAngle, hardBall->spinRPM, visualPaceMultiplier * 100.0f, hardBall->bounceCount);
+            
+            D2D1_RECT_F telemetryRect = D2D1::RectF(10, 40, WINDOW_WIDTH - 10, 90);
+            pRenderTarget->DrawTextW(
+                telemetry,
+                wcslen(telemetry),
+                pSmallTextFormat,
+                telemetryRect,
+                pBrush
+            );
+        }
+        
+        // Draw instructions
+        if (!simulationStarted) {
+            wchar_t instructions[300];
+            swprintf_s(instructions, 
+                L"SPACE: Start | R: Reset | W/S: Angle (%.0f\u00b0) | A/D: Force (%.0fN)\n>/<: Spin (%.0f RPM) | +/-: Pace (%.0f%%)",
+                launchAngle, horizontalForce, ballSpin, visualPaceMultiplier * 100.0f);
+            
+            D2D1_RECT_F instructRect = D2D1::RectF(10, WINDOW_HEIGHT - 30, WINDOW_WIDTH - 10, WINDOW_HEIGHT - 10);
+            pRenderTarget->DrawTextW(
+                instructions,
+                wcslen(instructions),
+                pSmallTextFormat,
+                instructRect,
+                pBrush
+            );
+        }
+        
+        // Draw air resistance combo box
+        DrawComboBox();
+    }
+    
+    void RenderLaverCourt() {
+        const float courtMargin = 50.0f;
+        const float zoomFactor = 0.25f; // 4x wider court with 2x zoom out = 0.25 total
+        const float courtPixelWidth = (WINDOW_WIDTH - 2 * courtMargin) * 4.0f * zoomFactor; // 4x width with zoom
+        const float courtPixelHeight = 300.0f * zoomFactor;
+        const float courtTop = 240.0f;
+        const float courtBottom = courtTop + courtPixelHeight;
+        
+        // Draw Laver Cup court
+        pBrush->SetColor(courts[3].color); // Black court color
+        D2D1_RECT_F courtRect = D2D1::RectF(
+            courtMargin,
+            courtTop,
+            courtMargin + courtPixelWidth,
+            courtBottom
+        );
+        pRenderTarget->FillRectangle(courtRect, pBrush);
+        
+        // Draw court outline
+        pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
+        pRenderTarget->DrawRectangle(courtRect, pBrush, 2.0f);
+        
+        // Draw net in the middle
+        float netX = courtMargin + courtPixelWidth / 2.0f;
+        float netPixelHeight = NET_HEIGHT * 50.0f * zoomFactor; // Scale with zoom
+        
+        pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
+        D2D1_RECT_F netRect = D2D1::RectF(
+            netX - 2.0f,
+            courtBottom - netPixelHeight,
+            netX + 2.0f,
+            courtBottom
+        );
+        pRenderTarget->FillRectangle(netRect, pBrush);
+        
+        // Draw net top line
+        pRenderTarget->DrawLine(
+            D2D1::Point2F(netX - 10.0f, courtBottom - netPixelHeight),
+            D2D1::Point2F(netX + 10.0f, courtBottom - netPixelHeight),
+            pBrush, 2.0f
+        );
+        
+        // Draw ball if simulation started
+        if (simulationStarted && laverBall) {
+            float ballPixelX = courtMargin + (laverBall->x / COURT_LENGTH) * courtPixelWidth;
+            float ballPixelY = courtBottom - (laverBall->y * 50.0f * zoomFactor); // Scale with zoom
+            
+            pBrush->SetColor(courts[3].ballColor); // Yellow ball
+            D2D1_ELLIPSE ballEllipse = D2D1::Ellipse(
+                D2D1::Point2F(ballPixelX, ballPixelY),
+                10.0f * zoomFactor, 10.0f * zoomFactor // Scale ball size with zoom
+            );
+            pRenderTarget->FillEllipse(ballEllipse, pBrush);
+        }
+        
+        // Draw title
+        pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
+        D2D1_RECT_F titleRect = D2D1::RectF(10, 10, WINDOW_WIDTH - 10, 40);
+        pRenderTarget->DrawTextW(
+            L"Laver Cup - Horizontal Shot",
+            30,
+            pTextFormat,
+            titleRect,
+            pBrush
+        );
+        
+        // Draw telemetry
+        if (simulationStarted && laverBall) {
+            wchar_t telemetry[512];
+            swprintf_s(telemetry, 
+                L"Time: %.2fs | X: %.2fm | Y: %.2fm | Vx: %.2fm/s | Vy: %.2fm/s\nForce: %.0fN | Angle: %.0f° | Spin: %.0f RPM | Pace: %.0f%% | Bounces: %d",
+                laverBall->time, laverBall->x, laverBall->y, laverBall->vx, laverBall->vy,
+                horizontalForce, launchAngle, laverBall->spinRPM, visualPaceMultiplier * 100.0f, laverBall->bounceCount);
+            
+            D2D1_RECT_F telemetryRect = D2D1::RectF(10, 40, WINDOW_WIDTH - 10, 90);
+            pRenderTarget->DrawTextW(
+                telemetry,
+                wcslen(telemetry),
+                pSmallTextFormat,
+                telemetryRect,
+                pBrush
+            );
+        }
+        
+        // Draw instructions
+        if (!simulationStarted) {
+            wchar_t instructions[300];
+            swprintf_s(instructions, 
+                L"SPACE: Start | R: Reset | W/S: Angle (%.0f°) | A/D: Force (%.0fN)\n>/<: Spin (%.0f RPM) | +/-: Pace (%.0f%%)",
+                launchAngle, horizontalForce, ballSpin, visualPaceMultiplier * 100.0f);
+            
+            D2D1_RECT_F instructRect = D2D1::RectF(10, WINDOW_HEIGHT - 30, WINDOW_WIDTH - 10, WINDOW_HEIGHT - 10);
+            pRenderTarget->DrawTextW(
+                instructions,
+                wcslen(instructions),
+                pSmallTextFormat,
+                instructRect,
+                pBrush
+            );
+        }
+        
+        // Draw air resistance combo box
+        DrawComboBox();
+    }
+    
+    void DrawComboBox() {
+        // Draw combo box background
+        pBrush->SetColor(D2D1::ColorF(0.2f, 0.2f, 0.2f));
+        pRenderTarget->FillRectangle(comboBoxRect, pBrush);
+        
+        // Draw combo box border
+        pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
+        pRenderTarget->DrawRectangle(comboBoxRect, pBrush, 2.0f);
+        
+        // Draw current selection
+        wchar_t labelText[128];
+        swprintf_s(labelText, L"Air: %s", airModes[airResistanceMode].name);
+        
+        D2D1_RECT_F textRect = D2D1::RectF(
+            comboBoxRect.left + 5,
+            comboBoxRect.top + 3,
+            comboBoxRect.right - 5,
+            comboBoxRect.bottom - 3
+        );
+        
+        pRenderTarget->DrawTextW(
+            labelText,
+            wcslen(labelText),
+            pSmallTextFormat,
+            textRect,
+            pBrush
+        );
+        
+        // Draw dropdown arrow
+        float arrowX = comboBoxRect.right - 15;
+        float arrowY = (comboBoxRect.top + comboBoxRect.bottom) / 2;
+        
+        D2D1_POINT_2F arrow1 = D2D1::Point2F(arrowX - 4, arrowY - 2);
+        D2D1_POINT_2F arrow2 = D2D1::Point2F(arrowX, arrowY + 2);
+        D2D1_POINT_2F arrow3 = D2D1::Point2F(arrowX + 4, arrowY - 2);
+        
+        pRenderTarget->DrawLine(arrow1, arrow2, pBrush, 1.5f);
+        pRenderTarget->DrawLine(arrow2, arrow3, pBrush, 1.5f);
     }
     
     void DrawCourtSection(int index, float xOffset) {
@@ -476,8 +1143,252 @@ public:
         } else if (wParam == 'R' || wParam == 'r') {
             simulationStarted = false;
             simulationComplete = false;
+            if (currentScreen == MODE_ALL) {
+                for (int i = 0; i < 4; i++) {
+                    balls[i]->reset();
+                }
+            } else if (currentScreen == MODE_CLAY) {
+                clayBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+            } else if (currentScreen == MODE_GRASS) {
+                grassBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+            } else if (currentScreen == MODE_HARD) {
+                hardBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+            } else if (currentScreen == MODE_LAVER) {
+                laverBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+            }
+        } else if (wParam == 'C' || wParam == 'c') {
+            currentScreen = MODE_CLAY;
+            simulationStarted = false;
+            simulationComplete = false;
+            clayBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+        } else if (wParam == 'G' || wParam == 'g') {
+            currentScreen = MODE_GRASS;
+            simulationStarted = false;
+            simulationComplete = false;
+            grassBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+        } else if (wParam == 'H' || wParam == 'h') {
+            currentScreen = MODE_HARD;
+            simulationStarted = false;
+            simulationComplete = false;
+            hardBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+        } else if (wParam == 'L' || wParam == 'l') {
+            currentScreen = MODE_LAVER;
+            simulationStarted = false;
+            simulationComplete = false;
+            laverBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+        } else if (wParam == 'A' || wParam == 'a') {
+            if (currentScreen == MODE_CLAY || currentScreen == MODE_GRASS || currentScreen == MODE_HARD || currentScreen == MODE_LAVER) {
+                // A key - decrease force in Clay/Grass/Hard/Laver courts
+                horizontalForce = max(MIN_HORIZONTAL_FORCE, horizontalForce - 10.0f);
+                if (!simulationStarted) {
+                    if (currentScreen == MODE_CLAY) {
+                        clayBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                    } else if (currentScreen == MODE_GRASS) {
+                        grassBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                    } else if (currentScreen == MODE_HARD) {
+                        hardBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                    } else {
+                        laverBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                    }
+                }
+            }
+        } else if (wParam == VK_BACK) {
+            // Backspace - return to all courts view
+            currentScreen = MODE_ALL;
+            simulationStarted = false;
+            simulationComplete = false;
             for (int i = 0; i < 4; i++) {
                 balls[i]->reset();
+            }
+        } else if (wParam == VK_UP && (currentScreen == MODE_CLAY || currentScreen == MODE_GRASS || currentScreen == MODE_HARD || currentScreen == MODE_LAVER)) {
+            horizontalForce = min(MAX_HORIZONTAL_FORCE, horizontalForce + 10.0f);
+            if (!simulationStarted) {
+                if (currentScreen == MODE_CLAY) {
+                    clayBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                } else if (currentScreen == MODE_GRASS) {
+                    grassBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                } else if (currentScreen == MODE_HARD) {
+                    hardBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                } else {
+                    laverBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                }
+            }
+        } else if (wParam == VK_DOWN && (currentScreen == MODE_CLAY || currentScreen == MODE_GRASS || currentScreen == MODE_HARD || currentScreen == MODE_LAVER)) {
+            horizontalForce = max(MIN_HORIZONTAL_FORCE, horizontalForce - 10.0f);
+            if (!simulationStarted) {
+                if (currentScreen == MODE_CLAY) {
+                    clayBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                } else if (currentScreen == MODE_GRASS) {
+                    grassBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                } else if (currentScreen == MODE_HARD) {
+                    hardBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                } else {
+                    laverBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                }
+            }
+        } else if ((wParam == 'W' || wParam == 'w') && (currentScreen == MODE_CLAY || currentScreen == MODE_GRASS || currentScreen == MODE_HARD || currentScreen == MODE_LAVER)) {
+            // W key - increase angle
+            launchAngle = min(MAX_ANGLE, launchAngle + ANGLE_STEP);
+            if (!simulationStarted) {
+                if (currentScreen == MODE_CLAY) {
+                    clayBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                } else if (currentScreen == MODE_GRASS) {
+                    grassBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                } else if (currentScreen == MODE_HARD) {
+                    hardBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                } else {
+                    laverBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                }
+            }
+        } else if ((wParam == 'S' || wParam == 's') && (currentScreen == MODE_CLAY || currentScreen == MODE_GRASS || currentScreen == MODE_HARD || currentScreen == MODE_LAVER)) {
+            // S key - decrease angle
+            launchAngle = max(MIN_ANGLE, launchAngle - ANGLE_STEP);
+            if (!simulationStarted) {
+                if (currentScreen == MODE_CLAY) {
+                    clayBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                } else if (currentScreen == MODE_GRASS) {
+                    grassBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                } else if (currentScreen == MODE_HARD) {
+                    hardBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                } else {
+                    laverBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                }
+            }
+        } else if ((wParam == 'D' || wParam == 'd') && (currentScreen == MODE_CLAY || currentScreen == MODE_GRASS || currentScreen == MODE_HARD || currentScreen == MODE_LAVER)) {
+            // D key - increase force
+            horizontalForce = min(MAX_HORIZONTAL_FORCE, horizontalForce + 10.0f);
+            if (!simulationStarted) {
+                if (currentScreen == MODE_CLAY) {
+                    clayBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                } else if (currentScreen == MODE_GRASS) {
+                    grassBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                } else if (currentScreen == MODE_HARD) {
+                    hardBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                } else {
+                    laverBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                }
+            }
+        } else if ((GetKeyState(VK_CONTROL) & 0x8000) && (wParam == VK_OEM_PLUS || wParam == VK_ADD)) {
+            // Ctrl + + for topspin
+            if (currentScreen == MODE_CLAY || currentScreen == MODE_GRASS || currentScreen == MODE_HARD || currentScreen == MODE_LAVER) {
+                ballSpin = min(MAX_SPIN, ballSpin + SPIN_STEP);
+                if (!simulationStarted) {
+                    if (currentScreen == MODE_CLAY) {
+                        clayBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                    } else if (currentScreen == MODE_GRASS) {
+                        grassBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                    } else if (currentScreen == MODE_HARD) {
+                        hardBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                    } else {
+                        laverBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                    }
+                }
+            }
+        } else if ((GetKeyState(VK_CONTROL) & 0x8000) && (wParam == VK_OEM_MINUS || wParam == VK_SUBTRACT)) {
+            // Ctrl + - for backspin
+            if (currentScreen == MODE_CLAY || currentScreen == MODE_GRASS || currentScreen == MODE_HARD || currentScreen == MODE_LAVER) {
+                ballSpin = max(MIN_SPIN, ballSpin - SPIN_STEP);
+                if (!simulationStarted) {
+                    if (currentScreen == MODE_CLAY) {
+                        clayBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                    } else if (currentScreen == MODE_GRASS) {
+                        grassBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                    } else if (currentScreen == MODE_HARD) {
+                        hardBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                    } else {
+                        laverBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                    }
+                }
+            }
+        } else if ((wParam == VK_OEM_PERIOD || wParam == '.') && (GetKeyState(VK_SHIFT) & 0x8000)) {
+            // > key (Shift + .) for topspin
+            if (currentScreen == MODE_CLAY || currentScreen == MODE_GRASS || currentScreen == MODE_HARD || currentScreen == MODE_LAVER) {
+                ballSpin = min(MAX_SPIN, ballSpin + SPIN_STEP);
+                if (!simulationStarted) {
+                    if (currentScreen == MODE_CLAY) {
+                        clayBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                    } else if (currentScreen == MODE_GRASS) {
+                        grassBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                    } else if (currentScreen == MODE_HARD) {
+                        hardBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                    } else {
+                        laverBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                    }
+                }
+            }
+        } else if ((wParam == VK_OEM_COMMA || wParam == ',') && (GetKeyState(VK_SHIFT) & 0x8000)) {
+            // < key (Shift + ,) for backspin
+            if (currentScreen == MODE_CLAY || currentScreen == MODE_GRASS || currentScreen == MODE_HARD || currentScreen == MODE_LAVER) {
+                ballSpin = max(MIN_SPIN, ballSpin - SPIN_STEP);
+                if (!simulationStarted) {
+                    if (currentScreen == MODE_CLAY) {
+                        clayBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                    } else if (currentScreen == MODE_GRASS) {
+                        grassBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                    } else if (currentScreen == MODE_HARD) {
+                        hardBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                    } else {
+                        laverBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                    }
+                }
+            }
+        } else if (wParam == VK_OEM_PLUS || wParam == VK_ADD) {
+            // + key (both regular and numpad) - visual pace
+            visualPaceMultiplier = min(10.0f, visualPaceMultiplier * 1.1f);
+        } else if (wParam == VK_OEM_MINUS || wParam == VK_SUBTRACT) {
+            // - key (both regular and numpad) - visual pace
+            visualPaceMultiplier = max(0.1f, visualPaceMultiplier / 1.1f);
+        }
+    }
+    
+    void OnMouseClick(int x, int y) {
+        if (currentScreen != MODE_CLAY && currentScreen != MODE_GRASS && currentScreen != MODE_HARD && currentScreen != MODE_LAVER) return;
+        
+        // Check if click is inside combo box
+        if (x >= comboBoxRect.left && x <= comboBoxRect.right &&
+            y >= comboBoxRect.top && y <= comboBoxRect.bottom) {
+            // Cycle through air resistance modes
+            airResistanceMode = (AirResistanceMode)((airResistanceMode + 1) % 4);
+            
+            // Update ball if not running simulation
+            if (!simulationStarted) {
+                if (currentScreen == MODE_CLAY) {
+                    clayBall->setAirResistance(airModes[airResistanceMode].coefficient);
+                    clayBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                } else if (currentScreen == MODE_GRASS) {
+                    grassBall->setAirResistance(airModes[airResistanceMode].coefficient);
+                    grassBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                } else if (currentScreen == MODE_HARD) {
+                    hardBall->setAirResistance(airModes[airResistanceMode].coefficient);
+                    hardBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                } else if (currentScreen == MODE_LAVER) {
+                    laverBall->setAirResistance(airModes[airResistanceMode].coefficient);
+                    laverBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                }
+            }
+        }
+    }
+    
+    void OnMouseWheel(int delta) {
+        if (currentScreen != MODE_CLAY && currentScreen != MODE_GRASS && currentScreen != MODE_HARD && currentScreen != MODE_LAVER) return;
+        
+        // Positive delta = scroll up, negative = scroll down
+        if (delta > 0) {
+            launchAngle = min(MAX_ANGLE, launchAngle + ANGLE_STEP);
+        } else {
+            launchAngle = max(MIN_ANGLE, launchAngle - ANGLE_STEP);
+        }
+        
+        // Update ball if not running simulation
+        if (!simulationStarted) {
+            if (currentScreen == MODE_CLAY) {
+                clayBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+            } else if (currentScreen == MODE_GRASS) {
+                grassBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+            } else if (currentScreen == MODE_HARD) {
+                hardBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+            } else if (currentScreen == MODE_LAVER) {
+                laverBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
             }
         }
     }
@@ -494,7 +1405,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             if (g_pApp) {
                 g_pApp->Initialize(hwnd);
             }
-            SetTimer(hwnd, 1, 16, NULL); // ~60 FPS
+            SetTimer(hwnd, 1, 8, NULL); // ~120 FPS (1000ms/120 = 8.33ms)
             return 0;
             
         case WM_DESTROY:
@@ -520,6 +1431,23 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         case WM_KEYDOWN:
             if (g_pApp) {
                 g_pApp->OnKeyPress(wParam);
+            }
+            return 0;
+            
+        case WM_LBUTTONDOWN:
+            if (g_pApp) {
+                int xPos = LOWORD(lParam);
+                int yPos = HIWORD(lParam);
+                g_pApp->OnMouseClick(xPos, yPos);
+                InvalidateRect(hwnd, NULL, FALSE);
+            }
+            return 0;
+            
+        case WM_MOUSEWHEEL:
+            if (g_pApp) {
+                int delta = GET_WHEEL_DELTA_WPARAM(wParam);
+                g_pApp->OnMouseWheel(delta);
+                InvalidateRect(hwnd, NULL, FALSE);
             }
             return 0;
     }
