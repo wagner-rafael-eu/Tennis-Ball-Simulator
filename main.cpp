@@ -1870,23 +1870,57 @@ INT_PTR CALLBACK RightyHitDialogProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPA
                 case IDOK: {
                     // Get values from dialog
                     BOOL success;
+                    
+                    // Validate Force
                     pParams->force = (float)GetDlgItemInt(hwndDlg, 101, &success, FALSE);
-                    if (!success || pParams->force < 10.0f || pParams->force > 600.0f) {
-                        MessageBox(hwndDlg, L"Force must be between 10 and 600 N", L"Invalid Input", MB_OK | MB_ICONWARNING);
+                    if (!success) {
+                        MessageBox(hwndDlg, L"Please enter a valid number for Force.", L"Invalid Input", MB_OK | MB_ICONWARNING);
+                        SetFocus(GetDlgItem(hwndDlg, 101));
+                        return TRUE;
+                    }
+                    if (pParams->force < 10.0f) {
+                        MessageBox(hwndDlg, L"Force is too low. Minimum is 10 N.", L"Value Out of Range", MB_OK | MB_ICONWARNING);
+                        SetFocus(GetDlgItem(hwndDlg, 101));
+                        return TRUE;
+                    }
+                    if (pParams->force > 600.0f) {
+                        MessageBox(hwndDlg, L"Force is too high. Maximum is 600 N.", L"Value Out of Range", MB_OK | MB_ICONWARNING);
                         SetFocus(GetDlgItem(hwndDlg, 101));
                         return TRUE;
                     }
                     
+                    // Validate Angle
                     pParams->angle = (float)GetDlgItemInt(hwndDlg, 102, &success, FALSE);
-                    if (!success || pParams->angle < 0.0f || pParams->angle > 75.0f) {
-                        MessageBox(hwndDlg, L"Angle must be between 0 and 75 degrees", L"Invalid Input", MB_OK | MB_ICONWARNING);
+                    if (!success) {
+                        MessageBox(hwndDlg, L"Please enter a valid number for Angle.", L"Invalid Input", MB_OK | MB_ICONWARNING);
+                        SetFocus(GetDlgItem(hwndDlg, 102));
+                        return TRUE;
+                    }
+                    if (pParams->angle < 0.0f) {
+                        MessageBox(hwndDlg, L"Angle is too low. Minimum is 0°.", L"Value Out of Range", MB_OK | MB_ICONWARNING);
+                        SetFocus(GetDlgItem(hwndDlg, 102));
+                        return TRUE;
+                    }
+                    if (pParams->angle > 75.0f) {
+                        MessageBox(hwndDlg, L"Angle is too high. Maximum is 75°.", L"Value Out of Range", MB_OK | MB_ICONWARNING);
                         SetFocus(GetDlgItem(hwndDlg, 102));
                         return TRUE;
                     }
                     
-                    pParams->spin = (float)(INT)GetDlgItemInt(hwndDlg, 103, &success, TRUE);
-                    if (!success || pParams->spin < -3000.0f || pParams->spin > 9000.0f) {
-                        MessageBox(hwndDlg, L"Spin must be between -3000 and 9000 RPM", L"Invalid Input", MB_OK | MB_ICONWARNING);
+                    // Validate Spin (allow negative values)
+                    pParams->spin = (float)(INT)GetDlgItemInt(hwndDlg, 103, &success, TRUE); // TRUE allows signed
+                    if (!success) {
+                        MessageBox(hwndDlg, L"Please enter a valid number for Spin.", L"Invalid Input", MB_OK | MB_ICONWARNING);
+                        SetFocus(GetDlgItem(hwndDlg, 103));
+                        return TRUE;
+                    }
+                    if (pParams->spin < -3000.0f) {
+                        MessageBox(hwndDlg, L"Spin is too low. Minimum is -3000 RPM (backspin).", L"Value Out of Range", MB_OK | MB_ICONWARNING);
+                        SetFocus(GetDlgItem(hwndDlg, 103));
+                        return TRUE;
+                    }
+                    if (pParams->spin > 9000.0f) {
+                        MessageBox(hwndDlg, L"Spin is too high. Maximum is 9000 RPM (topspin).", L"Value Out of Range", MB_OK | MB_ICONWARNING);
                         SetFocus(GetDlgItem(hwndDlg, 103));
                         return TRUE;
                     }
@@ -2000,7 +2034,7 @@ bool ShowRightyHitDialog(HWND hwndParent, RightyHitParams* params) {
     AddControl(105, 48, 50, 12, 102, ES_NUMBER | WS_BORDER | WS_TABSTOP, L"EDIT", L"");
     
     AddControl(10, 70, 90, 10, -1, SS_LEFT, L"STATIC", L"Spin (-3000-9000):");
-    AddControl(105, 68, 50, 12, 103, ES_NUMBER | WS_BORDER | WS_TABSTOP, L"EDIT", L"");
+    AddControl(105, 68, 50, 12, 103, WS_BORDER | WS_TABSTOP, L"EDIT", L""); // Removed ES_NUMBER to allow negative
     
     AddControl(40, 100, 60, 14, IDOK, BS_DEFPUSHBUTTON | WS_TABSTOP, L"BUTTON", L"Hit Back");
     AddControl(120, 100, 60, 14, IDCANCEL, BS_PUSHBUTTON | WS_TABSTOP, L"BUTTON", L"Bounce");
