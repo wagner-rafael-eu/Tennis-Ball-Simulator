@@ -561,14 +561,14 @@ public:
                 relaunchTimer += adjustedDT;
                 if (relaunchTimer >= RELAUNCH_DELAY) {
                     // Random force: 200-400N
-                    float randomForce = 200.0f + (rand() % 201);
+                    horizontalForce = 200.0f + (rand() % 201);
                     // Random angle: 9-39 degrees
-                    float randomAngle = 9.0f + (rand() % 31);
+                    launchAngle = 9.0f + (rand() % 31);
                     // Random spin: 60-600 RPM
-                    float randomSpin = 60.0f + (rand() % 541);
+                    ballSpin = 60.0f + (rand() % 541);
                     
                     clayBall->setAirResistance(airModes[airResistanceMode].coefficient);
-                    clayBall->resetForHorizontalShot(randomForce, randomAngle, randomSpin);
+                    clayBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
                     waitingToRelaunch = false;
                     relaunchTimer = 0.0f;
                 }
@@ -620,14 +620,14 @@ public:
                 relaunchTimer += adjustedDT;
                 if (relaunchTimer >= RELAUNCH_DELAY) {
                     // Random force: 200-400N
-                    float randomForce = 200.0f + (rand() % 201);
+                    horizontalForce = 200.0f + (rand() % 201);
                     // Random angle: 9-39 degrees
-                    float randomAngle = 9.0f + (rand() % 31);
+                    launchAngle = 9.0f + (rand() % 31);
                     // Random spin: 60-600 RPM
-                    float randomSpin = 60.0f + (rand() % 541);
+                    ballSpin = 60.0f + (rand() % 541);
                     
                     grassBall->setAirResistance(airModes[airResistanceMode].coefficient);
-                    grassBall->resetForHorizontalShot(randomForce, randomAngle, randomSpin);
+                    grassBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
                     waitingToRelaunch = false;
                     relaunchTimer = 0.0f;
                 }
@@ -679,14 +679,14 @@ public:
                 relaunchTimer += adjustedDT;
                 if (relaunchTimer >= RELAUNCH_DELAY) {
                     // Random force: 200-400N
-                    float randomForce = 200.0f + (rand() % 201);
+                    horizontalForce = 200.0f + (rand() % 201);
                     // Random angle: 9-39 degrees
-                    float randomAngle = 9.0f + (rand() % 31);
+                    launchAngle = 9.0f + (rand() % 31);
                     // Random spin: 60-600 RPM
-                    float randomSpin = 60.0f + (rand() % 541);
+                    ballSpin = 60.0f + (rand() % 541);
                     
                     hardBall->setAirResistance(airModes[airResistanceMode].coefficient);
-                    hardBall->resetForHorizontalShot(randomForce, randomAngle, randomSpin);
+                    hardBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
                     waitingToRelaunch = false;
                     relaunchTimer = 0.0f;
                 }
@@ -738,14 +738,14 @@ public:
                 relaunchTimer += adjustedDT;
                 if (relaunchTimer >= RELAUNCH_DELAY) {
                     // Random force: 200-400N
-                    float randomForce = 200.0f + (rand() % 201);
+                    horizontalForce = 200.0f + (rand() % 201);
                     // Random angle: 9-39 degrees
-                    float randomAngle = 9.0f + (rand() % 31);
+                    launchAngle = 9.0f + (rand() % 31);
                     // Random spin: 60-600 RPM
-                    float randomSpin = 60.0f + (rand() % 541);
+                    ballSpin = 60.0f + (rand() % 541);
                     
                     laverBall->setAirResistance(airModes[airResistanceMode].coefficient);
-                    laverBall->resetForHorizontalShot(randomForce, randomAngle, randomSpin);
+                    laverBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
                     waitingToRelaunch = false;
                     relaunchTimer = 0.0f;
                 }
