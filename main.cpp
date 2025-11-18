@@ -116,6 +116,32 @@ AirResistanceData airModes[4] = {
     {AIR_2000M, L"2000m altitude", 0.00039f}     // rho = 1.007 kg/m^3 (82% of sea level)
 };
 
+// Launch pattern modes
+enum LaunchPattern {
+    PATTERN_RANDOM,
+    PATTERN_NADAL_TOPSPIN,
+    PATTERN_FEDERER_BACKSPIN,
+    PATTERN_AGASSI_RETURN,
+    PATTERN_SAMPRAS_SERVE
+};
+
+struct LaunchPatternData {
+    LaunchPattern pattern;
+    const wchar_t* name;
+    float force;  // Newtons
+    float angle;  // degrees
+    float spin;   // RPM
+};
+
+// Launch pattern presets
+LaunchPatternData launchPatterns[5] = {
+    {PATTERN_RANDOM, L"Random", 0.0f, 0.0f, 0.0f},  // Special case - random values
+    {PATTERN_NADAL_TOPSPIN, L"Nadal Topspin", 600.0f, 45.0f, 7000.0f},
+    {PATTERN_FEDERER_BACKSPIN, L"Federer Slice", 240.0f, 21.0f, -1200.0f},
+    {PATTERN_AGASSI_RETURN, L"Agassi Return", 550.0f, 27.0f, 5000.0f},
+    {PATTERN_SAMPRAS_SERVE, L"Sampras Serve", 700.0f, 12.0f, 3000.0f}
+};
+
 // Court surface properties
 enum CourtType {
     ROLAND_GARROS_CLAY,    // Clay court - slower, higher bounce
@@ -374,7 +400,9 @@ private:
     float ballSpin; // Ball spin in RPM
     float visualPaceMultiplier; // Visual speed multiplier
     AirResistanceMode airResistanceMode;
+    LaunchPattern currentLaunchPattern;
     D2D1_RECT_F comboBoxRect;
+    D2D1_RECT_F launchPatternComboBoxRect;
     
     // Auto-relaunch state
     bool waitingToRelaunch;
@@ -397,6 +425,7 @@ public:
                pBrush(NULL), simulationStarted(false), simulationComplete(false),
                currentScreen(MODE_ALL), horizontalForce(DEFAULT_HORIZONTAL_FORCE), launchAngle(DEFAULT_ANGLE),
                ballSpin(DEFAULT_SPIN), visualPaceMultiplier(DEFAULT_PACE), airResistanceMode(AIR_SEA_LEVEL),
+               currentLaunchPattern(PATTERN_RANDOM),
                waitingToRelaunch(false), relaunchTimer(0.0f), rightyPosition(COURT_LENGTH - 1.0f),
                ballHitRighty(false), simulationPaused(false), rightyHitForce(300.0f), rightyHitAngle(30.0f), rightyHitSpin(120.0f) {
         for (int i = 0; i < 4; i++) {
@@ -407,8 +436,9 @@ public:
         hardBall = new TennisBall(&courts[2]); // Use hard court properties
         laverBall = new TennisBall(&courts[3]); // Use Laver Cup properties
         
-        // Initialize combo box position
+        // Initialize combo box positions
         comboBoxRect = D2D1::RectF(10, 420, 200, 445);
+        launchPatternComboBoxRect = D2D1::RectF(210, 420, 450, 445);
     }
     
     ~D2DApp() {
@@ -561,12 +591,7 @@ public:
             if (waitingToRelaunch) {
                 relaunchTimer += adjustedDT;
                 if (relaunchTimer >= RELAUNCH_DELAY) {
-                    // Random force: 200-400N
-                    horizontalForce = 200.0f + (rand() % 201);
-                    // Random angle: 9-39 degrees
-                    launchAngle = 9.0f + (rand() % 31);
-                    // Random spin: 60-600 RPM
-                    ballSpin = 60.0f + (rand() % 541);
+                    ApplyLaunchPattern();
                     
                     clayBall->setAirResistance(airModes[airResistanceMode].coefficient);
                     clayBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
@@ -620,12 +645,7 @@ public:
             if (waitingToRelaunch) {
                 relaunchTimer += adjustedDT;
                 if (relaunchTimer >= RELAUNCH_DELAY) {
-                    // Random force: 200-400N
-                    horizontalForce = 200.0f + (rand() % 201);
-                    // Random angle: 9-39 degrees
-                    launchAngle = 9.0f + (rand() % 31);
-                    // Random spin: 60-600 RPM
-                    ballSpin = 60.0f + (rand() % 541);
+                    ApplyLaunchPattern();
                     
                     grassBall->setAirResistance(airModes[airResistanceMode].coefficient);
                     grassBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
@@ -679,12 +699,7 @@ public:
             if (waitingToRelaunch) {
                 relaunchTimer += adjustedDT;
                 if (relaunchTimer >= RELAUNCH_DELAY) {
-                    // Random force: 200-400N
-                    horizontalForce = 200.0f + (rand() % 201);
-                    // Random angle: 9-39 degrees
-                    launchAngle = 9.0f + (rand() % 31);
-                    // Random spin: 60-600 RPM
-                    ballSpin = 60.0f + (rand() % 541);
+                    ApplyLaunchPattern();
                     
                     hardBall->setAirResistance(airModes[airResistanceMode].coefficient);
                     hardBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
@@ -738,12 +753,7 @@ public:
             if (waitingToRelaunch) {
                 relaunchTimer += adjustedDT;
                 if (relaunchTimer >= RELAUNCH_DELAY) {
-                    // Random force: 200-400N
-                    horizontalForce = 200.0f + (rand() % 201);
-                    // Random angle: 9-39 degrees
-                    launchAngle = 9.0f + (rand() % 31);
-                    // Random spin: 60-600 RPM
-                    ballSpin = 60.0f + (rand() % 541);
+                    ApplyLaunchPattern();
                     
                     laverBall->setAirResistance(airModes[airResistanceMode].coefficient);
                     laverBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
@@ -1381,15 +1391,15 @@ public:
     }
     
     void DrawComboBox() {
-        // Draw combo box background
+        // Draw air resistance combo box background
         pBrush->SetColor(D2D1::ColorF(0.2f, 0.2f, 0.2f));
         pRenderTarget->FillRectangle(comboBoxRect, pBrush);
         
-        // Draw combo box border
+        // Draw air resistance combo box border
         pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
         pRenderTarget->DrawRectangle(comboBoxRect, pBrush, 2.0f);
         
-        // Draw current selection
+        // Draw current air resistance selection
         wchar_t labelText[128];
         swprintf_s(labelText, L"Air: %s", airModes[airResistanceMode].name);
         
@@ -1408,7 +1418,7 @@ public:
             pBrush
         );
         
-        // Draw dropdown arrow
+        // Draw dropdown arrow for air resistance
         float arrowX = comboBoxRect.right - 15;
         float arrowY = (comboBoxRect.top + comboBoxRect.bottom) / 2;
         
@@ -1418,6 +1428,44 @@ public:
         
         pRenderTarget->DrawLine(arrow1, arrow2, pBrush, 1.5f);
         pRenderTarget->DrawLine(arrow2, arrow3, pBrush, 1.5f);
+        
+        // Draw launch pattern combo box background
+        pBrush->SetColor(D2D1::ColorF(0.2f, 0.2f, 0.2f));
+        pRenderTarget->FillRectangle(launchPatternComboBoxRect, pBrush);
+        
+        // Draw launch pattern combo box border
+        pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
+        pRenderTarget->DrawRectangle(launchPatternComboBoxRect, pBrush, 2.0f);
+        
+        // Draw current launch pattern selection
+        wchar_t patternText[128];
+        swprintf_s(patternText, L"Pattern: %s", launchPatterns[currentLaunchPattern].name);
+        
+        D2D1_RECT_F patternTextRect = D2D1::RectF(
+            launchPatternComboBoxRect.left + 5,
+            launchPatternComboBoxRect.top + 3,
+            launchPatternComboBoxRect.right - 5,
+            launchPatternComboBoxRect.bottom - 3
+        );
+        
+        pRenderTarget->DrawTextW(
+            patternText,
+            wcslen(patternText),
+            pSmallTextFormat,
+            patternTextRect,
+            pBrush
+        );
+        
+        // Draw dropdown arrow for launch pattern
+        float patternArrowX = launchPatternComboBoxRect.right - 15;
+        float patternArrowY = (launchPatternComboBoxRect.top + launchPatternComboBoxRect.bottom) / 2;
+        
+        D2D1_POINT_2F patternArrow1 = D2D1::Point2F(patternArrowX - 4, patternArrowY - 2);
+        D2D1_POINT_2F patternArrow2 = D2D1::Point2F(patternArrowX, patternArrowY + 2);
+        D2D1_POINT_2F patternArrow3 = D2D1::Point2F(patternArrowX + 4, patternArrowY - 2);
+        
+        pRenderTarget->DrawLine(patternArrow1, patternArrow2, pBrush, 1.5f);
+        pRenderTarget->DrawLine(patternArrow2, patternArrow3, pBrush, 1.5f);
     }
     
     void DrawCourtSection(int index, float xOffset) {
@@ -1813,7 +1861,7 @@ public:
     void OnMouseClick(int x, int y) {
         if (currentScreen != MODE_CLAY && currentScreen != MODE_GRASS && currentScreen != MODE_HARD && currentScreen != MODE_LAVER) return;
         
-        // Check if click is inside combo box
+        // Check if click is inside air resistance combo box
         if (x >= comboBoxRect.left && x <= comboBoxRect.right &&
             y >= comboBoxRect.top && y <= comboBoxRect.bottom) {
             // Cycle through air resistance modes
@@ -1835,6 +1883,49 @@ public:
                     laverBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
                 }
             }
+        }
+        
+        // Check if click is inside launch pattern combo box
+        if (x >= launchPatternComboBoxRect.left && x <= launchPatternComboBoxRect.right &&
+            y >= launchPatternComboBoxRect.top && y <= launchPatternComboBoxRect.bottom) {
+            // Cycle through launch patterns
+            currentLaunchPattern = (LaunchPattern)((currentLaunchPattern + 1) % 5);
+            
+            // Apply the new pattern
+            ApplyLaunchPattern();
+            
+            // Update ball if not running simulation
+            if (!simulationStarted) {
+                if (currentScreen == MODE_CLAY) {
+                    clayBall->setAirResistance(airModes[airResistanceMode].coefficient);
+                    clayBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                } else if (currentScreen == MODE_GRASS) {
+                    grassBall->setAirResistance(airModes[airResistanceMode].coefficient);
+                    grassBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                } else if (currentScreen == MODE_HARD) {
+                    hardBall->setAirResistance(airModes[airResistanceMode].coefficient);
+                    hardBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                } else if (currentScreen == MODE_LAVER) {
+                    laverBall->setAirResistance(airModes[airResistanceMode].coefficient);
+                    laverBall->resetForHorizontalShot(horizontalForce, launchAngle, ballSpin);
+                }
+            }
+        }
+    }
+    
+    void ApplyLaunchPattern() {
+        if (currentLaunchPattern == PATTERN_RANDOM) {
+            // Random force: 200-400N
+            horizontalForce = 200.0f + (rand() % 201);
+            // Random angle: 9-39 degrees
+            launchAngle = 9.0f + (rand() % 31);
+            // Random spin: 60-600 RPM
+            ballSpin = 60.0f + (rand() % 541);
+        } else {
+            // Use preset pattern
+            horizontalForce = launchPatterns[currentLaunchPattern].force;
+            launchAngle = launchPatterns[currentLaunchPattern].angle;
+            ballSpin = launchPatterns[currentLaunchPattern].spin;
         }
     }
     
