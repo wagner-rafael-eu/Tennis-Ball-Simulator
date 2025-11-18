@@ -1,10 +1,70 @@
 # Tennis Ball Physics Simulator
 
-A real-time physics simulation comparing tennis ball behavior across four professional court surfaces using realistic physics and Direct2D graphics.
+A real-time physics simulation of tennis gameplay featuring horizontal shots, ball trajectories, spin effects, air resistance, and interactive gameplay with collision detection on multiple professional court surfaces.
 
-## Technical Overview
+## Features
 
-This Windows application simulates the physics of tennis balls dropped from 2 meters onto four different professional tennis court surfaces. The simulation uses accurate gravitational physics, surface-specific coefficients of restitution, and real-time visualization to compare how different courts affect ball bounce characteristics.
+### Core Gameplay
+- **Horizontal Shot Simulation**: Launch tennis balls with configurable force (10-1000 N), angle (0-90°), and spin (-3000 to +9000 RPM)
+- **Multiple Court Views**: 
+  - All Courts View: Compare all 4 surfaces simultaneously with drop simulation
+  - Individual Court Views: Clay, Grass, Hard Court, and Laver Cup with full horizontal gameplay
+- **Interactive Player Controls**: 
+  - LEFTY (launcher) - Automatically launches balls from left side
+  - RIGHTY (player) - Human-controlled player that can move and hit balls back
+
+### Advanced Physics
+- **Realistic Ball Physics**:
+  - Gravity simulation (9.81 m/s²)
+  - Magnus effect (spin-induced trajectory curves)
+  - Air resistance at multiple altitudes (Vacuum, Sea Level, 1000m, 2000m)
+  - Surface-specific friction and restitution
+  - Velocity-dependent horizontal and vertical motion
+  
+- **Collision Detection**:
+  - **NET Collision**: Ball bounces off net with 80% energy absorption when hit below net height (0.914m)
+  - **RIGHTY Collision**: Interactive hit-back system with configurable parameters
+  - **Ground Bounces**: Realistic bounce physics with energy loss and spin effects
+
+### Interactive Hit-Back System
+When the ball reaches RIGHTY, a dialog box appears allowing you to configure the return shot:
+- **Force**: 10-600 N (default: 300N)
+- **Angle**: 0-75° (default: 30°)
+- **Spin**: -3000 to +9000 RPM (default: 120 RPM)
+  - Negative values = Backspin
+  - Positive values = Topspin
+- Option to cancel and let the ball bounce naturally
+
+### Visualization
+- **Real-time Telemetry**: 
+  - Ball position (X, Y coordinates)
+  - Velocity components (Vx, Vy)
+  - Time elapsed
+  - Bounce counter
+  - Current force, angle, and spin settings
+  
+- **Visual Elements**:
+  - Color-coded balls for each court surface
+  - NET visualization at court center
+  - LEFTY launcher (green icon)
+  - RIGHTY player stick (white, 2.5x net height)
+  - Trajectory tracking
+  - Combined height vs time graph (All Courts View)
+
+### Configurable Settings
+All settings can be adjusted in `settings.ini`:
+- Default launch force, angle, and spin
+- Visual pace multiplier (simulation speed)
+- RIGHTY movement speed
+- Angle adjustment steps
+- Spin adjustment steps
+- Min/max spin limits
+
+### Auto-Relaunch Feature
+In individual court views, balls automatically relaunch after 2 seconds with randomized parameters:
+- Force: 200-400N
+- Angle: 9-39°
+- Spin: 60-600 RPM
 
 ### Core Technologies
 - **Language:** C++ (ISO C++17 Standard)
@@ -106,9 +166,33 @@ Ctrl+Shift+P → "Tasks: Run Task" → "Build and Run Tennis Ball Simulator"
 ```
 
 ### User Controls
-- **SPACE** - Start/restart simulation (begins ball drop)
-- **R** - Reset simulation to initial state
-- **Close Window** - Exit application
+
+#### All Courts View
+- **SPACE** - Start drop simulation
+- **R** - Reset simulation
+- **C** - Switch to Clay Court view
+- **G** - Switch to Grass Court view
+- **H** - Switch to Hard Court view
+- **L** - Switch to Laver Cup view
+
+#### Individual Court Views
+- **SPACE** - Start/launch ball
+- **R** - Reset simulation
+- **BACKSPACE** - Return to All Courts view
+- **W/S** - Increase/Decrease launch angle
+- **A/D** - Decrease/Increase launch force
+- **>/<** (Shift+./Shift+,) - Increase/Decrease spin
+- **+/-** - Increase/Decrease visual pace (simulation speed)
+- **LEFT/RIGHT Arrow Keys** - Move RIGHTY player
+- **Mouse Wheel** - Adjust launch angle
+- **Mouse Click (Air Resistance Box)** - Cycle through air resistance modes
+
+#### RIGHTY Hit Dialog (appears on ball collision)
+- Enter custom values for Force, Angle, and Spin
+- **Hit Back** button - Apply values and hit ball back
+- **Bounce** button - Cancel and let ball bounce naturally
+- **Enter** - Submit (same as Hit Back)
+- **Escape** - Cancel (same as Bounce)
 
 ## Physics Engine Details
 
@@ -117,12 +201,19 @@ Ctrl+Shift+P → "Tasks: Run Task" → "Build and Run Tennis Ball Simulator"
 | Parameter | Value | Unit | Description |
 |-----------|-------|------|-------------|
 | Gravity (g) | 9.81 | m/s² | Standard Earth gravity |
-| Initial Height (h₀) | 2.0 | m | Drop height |
-| Initial Velocity (v₀) | 0.0 | m/s | Released from rest |
+| Initial Height (All Courts) | 2.0 | m | Drop height |
+| Initial Height (Horizontal) | 1.0 | m | Launch height (net height) |
 | Ball Radius | 0.0335 | m | Tennis ball (6.7cm diameter) |
-| Timestep (Δt) | 0.016 | s | 60 FPS update rate |
-| Pixels per Meter | 100 | px/m | Visualization scaling |
-| Window Size | 640×480 | px | Fixed window dimensions |
+| Ball Mass | 0.058 | kg | Standard tennis ball |
+| Court Length | 23.77 | m | Official tennis court length |
+| Net Height | 0.914 | m | Net height at center |
+| Timestep (Δt) | 0.0083 | s | ~120 FPS update rate |
+| Visual Pace (Default) | 2.0x | - | 200% speed (configurable) |
+| Force Range | 10-1000 | N | Horizontal launch force |
+| Angle Range | 0-90 | ° | Launch angle |
+| Spin Range | -3000 to +9000 | RPM | Backspin to topspin |
+| RIGHTY Speed (Default) | 8.0 | m/s | Player movement speed |
+| Net Absorption | 80% | - | Energy absorbed on net collision |
 
 ### Court Surface Properties
 
@@ -135,21 +226,59 @@ Ctrl+Shift+P → "Tasks: Run Task" → "Build and Run Tennis Ball Simulator"
 
 ### Physics Equations
 
-**Velocity Update (Euler Integration):**
+**Velocity Update (with gravity and Magnus effect):**
 ```
-v(t + Δt) = v(t) - g × Δt
+vy(t + Δt) = vy(t) - g × Δt - (Magnus force / mass) × Δt
+vx(t + Δt) = vx(t) + (air resistance force / mass) × Δt
+```
+
+**Magnus Effect (spin-induced curve):**
+```
+Magnus Acceleration = (coefficient × ω × ball_speed) / mass
+Where ω = RPM × 2π / 60 (angular velocity in rad/s)
+Positive spin (topspin) curves down
+Negative spin (backspin) curves up
+```
+
+**Air Resistance:**
+```
+Air Force = -coefficient × vx × |vx|
+Coefficient varies by altitude:
+  - Vacuum: 0.0
+  - Sea Level: 0.0005
+  - 1000m: 0.00044
+  - 2000m: 0.00039
 ```
 
 **Position Update:**
 ```
-y(t + Δt) = y(t) + v(t) × Δt
+y(t + Δt) = y(t) + vy(t) × Δt
+x(t + Δt) = x(t) + vx(t) × Δt
 ```
 
-**Bounce Calculation (Coefficient of Restitution):**
+**Bounce Calculation (with spin effects):**
 ```
-v_after = -v_before × COR
+vy_after = -vy_before × COR
+vx_after = vx_before × 0.8 + (spin_effect)
+spin_effect = (spinRPM / 5000) × 2.0
+spin_after = spin_before × 0.7
 ```
-Where COR ∈ [0, 1] (0 = no bounce, 1 = perfect elastic collision)
+
+**NET Collision:**
+```
+If ball crosses net plane AND height ≤ NET_HEIGHT + BALL_RADIUS:
+  vx_after = -vx_before × 0.2  (80% absorption)
+  vy_after = vy_before × 0.2
+  spin_after = spin_before × 0.2
+```
+
+**RIGHTY Hit (player return):**
+```
+total_velocity = (force / 600N) × 30 m/s
+vx = -total_velocity × cos(angle)  (negative = leftward)
+vy = total_velocity × sin(angle)
+spin = user_configured_spin
+```
 
 **Stopping Condition:**
 - Velocity threshold: |v| < 0.1 m/s
@@ -175,13 +304,14 @@ For a ball dropped from height h₀ with COR e:
 ## Application Statistics
 
 ### Code Metrics
-- **Total Lines of Code:** ~650 lines
+- **Total Lines of Code:** ~2000 lines
 - **Source Files:** 1 (`main.cpp`)
-- **Classes:** 1 (`D2DApp`)
-- **Structures:** 2 (`CourtSurface`, `BounceData`)
-- **Functions:** 15+ methods
-- **Constants:** 8 global constants
-- **Arrays:** 1 (4 court surfaces)
+- **Configuration Files:** 1 (`settings.ini`)
+- **Classes:** 2 (`D2DApp`, `TennisBall`)
+- **Structures:** 3 (`CourtSurface`, `BounceData`, `RightyHitParams`)
+- **Functions:** 40+ methods
+- **Constants:** 15+ global constants
+- **Enums:** 3 (ScreenMode, CourtType, AirResistanceMode)
 
 ### Memory Footprint
 - **Executable Size:** ~40-50 KB (release build)
@@ -236,16 +366,35 @@ Total Window: 640×480 pixels
 ## Project Structure
 
 ```
-c:\_AI\031/
+c:\_AI\032/
 │
-├── main.cpp                        # Complete application (650 lines)
+├── main.cpp                        # Complete application (~2000 lines)
 │   ├── Physics constants & definitions
+│   ├── Settings loading (settings.ini)
 │   ├── CourtSurface struct (properties & colors)
 │   ├── BounceData struct (trajectory recording)
+│   ├── RightyHitParams struct (dialog parameters)
 │   ├── TennisBall class (physics simulation)
+│   │   ├── Gravity simulation
+│   │   ├── Magnus effect (spin)
+│   │   ├── Air resistance
+│   │   ├── NET collision detection
+│   │   └── Ground collision
 │   ├── D2DApp class (rendering & control)
+│   │   ├── Multiple screen modes
+│   │   ├── Player movement (RIGHTY)
+│   │   ├── Ball-RIGHTY collision
+│   │   └── Dialog management
+│   ├── RightyHitDialogProc (dialog handler)
+│   ├── ShowRightyHitDialog (dialog creation)
 │   ├── WindowProc (message handling)
 │   └── wWinMain (entry point)
+│
+├── settings.ini                    # Configuration file
+│   ├── DefaultForce, DefaultAngle, DefaultSpin
+│   ├── DefaultPace (visual speed)
+│   ├── RightySpeed (movement speed)
+│   └── AngleStep, SpinStep, Min/Max values
 │
 ├── build.bat                       # Automated build script
 │   ├── Visual Studio detection
@@ -414,14 +563,16 @@ Copy-Item .\build\TennisBallSimulator.exe ~\Desktop\
 
 ## Future Enhancements (Not Implemented)
 
-- Horizontal ball movement (spin effects)
-- Air resistance simulation
-- Ball rotation visualization
+- Multiple ball physics simultaneously
+- Ball-to-ball collision detection
+- Advanced trajectory prediction overlay
 - Export trajectory data to CSV
-- Adjustable drop height
-- Slow-motion replay
-- Multiple simultaneous drops
-- Sound effects for bounces
+- Replay system with timeline scrubbing
+- Sound effects for bounces and hits
+- Multiplayer mode (two human players)
+- Tournament mode with scoring
+- Custom court designer
+- 3D visualization option
 
 ## License & Credits
 
