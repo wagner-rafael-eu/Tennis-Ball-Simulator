@@ -50,6 +50,17 @@ When the ball reaches RIGHTY, a dialog box appears allowing you to configure the
   - RIGHTY player stick (white, 2.5x net height)
   - Trajectory tracking
   - Combined height vs time graph (All Courts View)
+  - Two combo boxes for air resistance and launch pattern selection
+
+### Launch Pattern Presets
+Choose from professional player-inspired shot patterns:
+- **Random** (default): Randomized parameters (200-400N, 9-39°, 60-600 RPM)
+- **Nadal Topspin**: 600N, 45°, 7000 RPM - Heavy topspin forehand
+- **Federer Slice**: 240N, 21°, -1200 RPM - Low backspin slice
+- **Agassi Return**: 550N, 27°, 5000 RPM - Aggressive baseline return
+- **Sampras Serve**: 700N, 12°, 3000 RPM - Powerful flat serve
+
+Patterns can be selected via the "Launch Pattern" combo box in individual court views.
 
 ### Configurable Settings
 All settings can be adjusted in `settings.ini`:
@@ -61,10 +72,8 @@ All settings can be adjusted in `settings.ini`:
 - Min/max spin limits
 
 ### Auto-Relaunch Feature
-In individual court views, balls automatically relaunch after 2 seconds with randomized parameters:
-- Force: 200-400N
-- Angle: 9-39°
-- Spin: 60-600 RPM
+In individual court views, balls automatically relaunch after 2 seconds using the selected launch pattern.
+When "Random" is selected, uses randomized parameters (200-400N, 9-39°, 60-600 RPM).
 
 ### Core Technologies
 - **Language:** C++ (ISO C++17 Standard)
@@ -185,7 +194,8 @@ Ctrl+Shift+P → "Tasks: Run Task" → "Build and Run Tennis Ball Simulator"
 - **+/-** - Increase/Decrease visual pace (simulation speed)
 - **LEFT/RIGHT Arrow Keys** - Move RIGHTY player
 - **Mouse Wheel** - Adjust launch angle
-- **Mouse Click (Air Resistance Box)** - Cycle through air resistance modes
+- **Mouse Click (Air Resistance Box)** - Cycle through air resistance modes (Vacuum, Sea Level, 1000m, 2000m)
+- **Mouse Click (Launch Pattern Box)** - Cycle through launch patterns (Random, Nadal, Federer, Agassi, Sampras)
 
 #### RIGHTY Hit Dialog (appears on ball collision)
 - Enter custom values for Force, Angle, and Spin
@@ -304,14 +314,15 @@ For a ball dropped from height h₀ with COR e:
 ## Application Statistics
 
 ### Code Metrics
-- **Total Lines of Code:** ~2000 lines
+- **Total Lines of Code:** ~2300 lines
 - **Source Files:** 1 (`main.cpp`)
 - **Configuration Files:** 1 (`settings.ini`)
 - **Classes:** 2 (`D2DApp`, `TennisBall`)
-- **Structures:** 3 (`CourtSurface`, `BounceData`, `RightyHitParams`)
-- **Functions:** 40+ methods
+- **Structures:** 4 (`CourtSurface`, `BounceData`, `RightyHitParams`, `LaunchPatternData`)
+- **Functions:** 45+ methods
 - **Constants:** 15+ global constants
-- **Enums:** 3 (ScreenMode, CourtType, AirResistanceMode)
+- **Enums:** 5 (ScreenMode, CourtType, AirResistanceMode, LaunchPattern)
+- **Data Arrays:** 2 (airModes[4], launchPatterns[5])
 
 ### Memory Footprint
 - **Executable Size:** ~40-50 KB (release build)
