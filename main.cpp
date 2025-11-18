@@ -1843,13 +1843,27 @@ INT_PTR CALLBACK RightyHitDialogProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPA
     static RightyHitParams* pParams = nullptr;
     
     switch (uMsg) {
-        case WM_INITDIALOG:
+        case WM_INITDIALOG: {
             pParams = (RightyHitParams*)lParam;
+            
+            // Center the dialog on parent window
+            HWND hwndParent = GetParent(hwndDlg);
+            RECT rcParent, rcDlg;
+            GetWindowRect(hwndParent, &rcParent);
+            GetWindowRect(hwndDlg, &rcDlg);
+            int x = rcParent.left + (rcParent.right - rcParent.left - (rcDlg.right - rcDlg.left)) / 2;
+            int y = rcParent.top + (rcParent.bottom - rcParent.top - (rcDlg.bottom - rcDlg.top)) / 2;
+            SetWindowPos(hwndDlg, NULL, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+            
             // Set default values
             SetDlgItemInt(hwndDlg, 101, (UINT)pParams->force, FALSE);
             SetDlgItemInt(hwndDlg, 102, (UINT)pParams->angle, FALSE);
             SetDlgItemInt(hwndDlg, 103, (INT)pParams->spin, TRUE);
-            return TRUE;
+            
+            // Set focus to first edit control
+            SetFocus(GetDlgItem(hwndDlg, 101));
+            return FALSE; // We set focus manually
+        }
             
         case WM_COMMAND:
             switch (LOWORD(wParam)) {
@@ -1858,19 +1872,22 @@ INT_PTR CALLBACK RightyHitDialogProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPA
                     BOOL success;
                     pParams->force = (float)GetDlgItemInt(hwndDlg, 101, &success, FALSE);
                     if (!success || pParams->force < 10.0f || pParams->force > 600.0f) {
-                        MessageBox(hwndDlg, L"Force must be between 10 and 600 N", L"Invalid Input", MB_OK);
+                        MessageBox(hwndDlg, L"Force must be between 10 and 600 N", L"Invalid Input", MB_OK | MB_ICONWARNING);
+                        SetFocus(GetDlgItem(hwndDlg, 101));
                         return TRUE;
                     }
                     
                     pParams->angle = (float)GetDlgItemInt(hwndDlg, 102, &success, FALSE);
                     if (!success || pParams->angle < 0.0f || pParams->angle > 75.0f) {
-                        MessageBox(hwndDlg, L"Angle must be between 0 and 75 degrees", L"Invalid Input", MB_OK);
+                        MessageBox(hwndDlg, L"Angle must be between 0 and 75 degrees", L"Invalid Input", MB_OK | MB_ICONWARNING);
+                        SetFocus(GetDlgItem(hwndDlg, 102));
                         return TRUE;
                     }
                     
                     pParams->spin = (float)(INT)GetDlgItemInt(hwndDlg, 103, &success, TRUE);
                     if (!success || pParams->spin < -3000.0f || pParams->spin > 9000.0f) {
-                        MessageBox(hwndDlg, L"Spin must be between -3000 and 9000 RPM", L"Invalid Input", MB_OK);
+                        MessageBox(hwndDlg, L"Spin must be between -3000 and 9000 RPM", L"Invalid Input", MB_OK | MB_ICONWARNING);
+                        SetFocus(GetDlgItem(hwndDlg, 103));
                         return TRUE;
                     }
                     
@@ -1889,32 +1906,111 @@ INT_PTR CALLBACK RightyHitDialogProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPA
     return FALSE;
 }
 
-// Create dialog template in memory
-HWND CreateRightyHitDialog(HWND hwndParent, RightyHitParams* params) {
-    // Use a simple input box approach since creating dialog templates in code is complex
-    // We'll use TaskDialog for a cleaner approach
-    return nullptr;
-}
-
-// Show RIGHTY hit dialog using input boxes
+// Create dialog template in memory and show dialog
 bool ShowRightyHitDialog(HWND hwndParent, RightyHitParams* params) {
-    wchar_t buffer[256];
-    wchar_t input[64];
+    // Create dialog template in memory
+    struct DialogTemplate {
+        DLGTEMPLATE dlg;
+        WORD menu;
+        WORD class_;
+        WORD title;
+        WORD pointsize;
+        WCHAR font[13];
+    };
     
-    // Ask for force
-    swprintf_s(input, L"%d", (int)params->force);
-    swprintf_s(buffer, L"Enter hit force (10-600 N):");
+    // Allocate memory for dialog template with controls
+    const int TEMPLATE_SIZE = 2048;
+    BYTE* pTemplate = new BYTE[TEMPLATE_SIZE];
+    ZeroMemory(pTemplate, TEMPLATE_SIZE);
     
-    if (MessageBox(hwndParent, 
-        L"Ball hit RIGHTY!\n\nUse default values:\nForce: 300N\nAngle: 30°\nSpin: 120 RPM\n\nClick OK to hit back with defaults, Cancel to let ball bounce.",
-        L"RIGHTY Hit!", 
-        MB_OKCANCEL | MB_ICONINFORMATION) == IDOK) {
-        params->confirmed = true;
-        return true;
-    }
+    DLGTEMPLATE* pDlg = (DLGTEMPLATE*)pTemplate;
+    pDlg->style = DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU;
+    pDlg->dwExtendedStyle = 0;
+    pDlg->cdit = 9; // 3 labels + 3 edit boxes + 2 buttons + 1 title label
+    pDlg->x = 0;
+    pDlg->y = 0;
+    pDlg->cx = 220;
+    pDlg->cy = 140;
     
-    params->confirmed = false;
-    return false;
+    WORD* pCurrent = (WORD*)(pDlg + 1);
+    
+    // Menu (none)
+    *pCurrent++ = 0;
+    // Class (default)
+    *pCurrent++ = 0;
+    // Title
+    wcscpy_s((WCHAR*)pCurrent, 50, L"RIGHTY Hit Back");
+    pCurrent += wcslen((WCHAR*)pCurrent) + 1;
+    
+    // Font
+    *pCurrent++ = 8; // Font size
+    wcscpy_s((WCHAR*)pCurrent, 20, L"MS Shell Dlg");
+    pCurrent += wcslen((WCHAR*)pCurrent) + 1;
+    
+    // Align to DWORD boundary
+    if ((ULONG_PTR)pCurrent % 4)
+        pCurrent++;
+    
+    // Helper lambda to add control
+    auto AddControl = [&](WORD x, WORD y, WORD cx, WORD cy, WORD id, DWORD style, const WCHAR* className, const WCHAR* text) {
+        // Align to DWORD
+        if ((ULONG_PTR)pCurrent % 4) pCurrent++;
+        
+        DLGITEMTEMPLATE* pItem = (DLGITEMTEMPLATE*)pCurrent;
+        pItem->style = style | WS_CHILD | WS_VISIBLE;
+        pItem->dwExtendedStyle = 0;
+        pItem->x = x;
+        pItem->y = y;
+        pItem->cx = cx;
+        pItem->cy = cy;
+        pItem->id = id;
+        pCurrent = (WORD*)(pItem + 1);
+        
+        // Class
+        if (wcscmp(className, L"STATIC") == 0) {
+            *pCurrent++ = 0xFFFF;
+            *pCurrent++ = 0x0082;
+        } else if (wcscmp(className, L"EDIT") == 0) {
+            *pCurrent++ = 0xFFFF;
+            *pCurrent++ = 0x0081;
+        } else if (wcscmp(className, L"BUTTON") == 0) {
+            *pCurrent++ = 0xFFFF;
+            *pCurrent++ = 0x0080;
+        }
+        
+        // Text
+        if (text && wcslen(text) > 0) {
+            wcscpy_s((WCHAR*)pCurrent, 100, text);
+            pCurrent += wcslen(text) + 1;
+        } else {
+            *pCurrent++ = 0;
+        }
+        
+        // Creation data
+        *pCurrent++ = 0;
+    };
+    
+    // Add controls
+    AddControl(10, 10, 200, 12, 1000, SS_LEFT, L"STATIC", L"Ball hit RIGHTY! Set return shot parameters:");
+    
+    AddControl(10, 30, 90, 10, -1, SS_LEFT, L"STATIC", L"Force (10-600 N):");
+    AddControl(105, 28, 50, 12, 101, ES_NUMBER | WS_BORDER | WS_TABSTOP, L"EDIT", L"");
+    
+    AddControl(10, 50, 90, 10, -1, SS_LEFT, L"STATIC", L"Angle (0-75°):");
+    AddControl(105, 48, 50, 12, 102, ES_NUMBER | WS_BORDER | WS_TABSTOP, L"EDIT", L"");
+    
+    AddControl(10, 70, 90, 10, -1, SS_LEFT, L"STATIC", L"Spin (-3000-9000):");
+    AddControl(105, 68, 50, 12, 103, ES_NUMBER | WS_BORDER | WS_TABSTOP, L"EDIT", L"");
+    
+    AddControl(40, 100, 60, 14, IDOK, BS_DEFPUSHBUTTON | WS_TABSTOP, L"BUTTON", L"Hit Back");
+    AddControl(120, 100, 60, 14, IDCANCEL, BS_PUSHBUTTON | WS_TABSTOP, L"BUTTON", L"Bounce");
+    
+    // Show dialog
+    INT_PTR result = DialogBoxIndirectParam(GetModuleHandle(NULL), pDlg, hwndParent, RightyHitDialogProc, (LPARAM)params);
+    
+    delete[] pTemplate;
+    
+    return (result == IDOK && params->confirmed);
 }
 
 // Window procedure
