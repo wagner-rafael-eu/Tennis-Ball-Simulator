@@ -63,6 +63,7 @@ float SPIN_STEP = 60.0f; // RPM per key press
 float MAX_SPIN = 9000.0f; // Maximum spin in RPM
 float MIN_SPIN = -3000.0f; // Minimum backspin in RPM
 float DEFAULT_PACE = 2.0f; // Visual pace multiplier (2.0 = 200%)
+float RIGHTY_SPEED = 4.0f; // RIGHTY movement speed in m/s
 
 // Function to load settings from INI file
 void LoadSettings() {
@@ -84,6 +85,7 @@ void LoadSettings() {
     MIN_SPIN = GetPrivateProfileIntW(L"Physics", L"MinSpin", -3000, iniPath.c_str());
     MAX_SPIN = GetPrivateProfileIntW(L"Physics", L"MaxSpin", 9000, iniPath.c_str());
     DEFAULT_PACE = GetPrivateProfileIntW(L"Physics", L"DefaultPace", 200, iniPath.c_str()) / 100.0f; // Convert percentage to multiplier
+    RIGHTY_SPEED = GetPrivateProfileIntW(L"Physics", L"RightySpeed", 4, iniPath.c_str());
 }
 
 // Air resistance modes
@@ -321,13 +323,16 @@ private:
     float relaunchTimer;
     const float RELAUNCH_DELAY = 2.0f; // 2 seconds
     
+    // RIGHTY position (in meters from left edge of court)
+    float rightyPosition;
+    
 public:
     D2DApp() : hwnd(NULL), pFactory(NULL), pRenderTarget(NULL), 
                pDWriteFactory(NULL), pTextFormat(NULL), pSmallTextFormat(NULL),
                pBrush(NULL), simulationStarted(false), simulationComplete(false),
                currentScreen(MODE_ALL), horizontalForce(DEFAULT_HORIZONTAL_FORCE), launchAngle(DEFAULT_ANGLE),
                ballSpin(DEFAULT_SPIN), visualPaceMultiplier(DEFAULT_PACE), airResistanceMode(AIR_SEA_LEVEL),
-               waitingToRelaunch(false), relaunchTimer(0.0f) {
+               waitingToRelaunch(false), relaunchTimer(0.0f), rightyPosition(COURT_LENGTH - 1.0f) {
         for (int i = 0; i < 4; i++) {
             balls[i] = new TennisBall(&courts[i]);
         }
@@ -452,6 +457,18 @@ public:
         if (!simulationStarted || simulationComplete) return;
         
         float adjustedDT = DT * visualPaceMultiplier;
+        
+        // Update RIGHTY position based on keyboard input (for individual court screens)
+        if (currentScreen != MODE_ALL) {
+            if (GetAsyncKeyState(VK_LEFT) & 0x8000) {
+                rightyPosition -= ::RIGHTY_SPEED * DT; // Use raw DT, not affected by visual pace
+                rightyPosition = max(0.0f, rightyPosition);
+            }
+            if (GetAsyncKeyState(VK_RIGHT) & 0x8000) {
+                rightyPosition += ::RIGHTY_SPEED * DT; // Use raw DT, not affected by visual pace
+                rightyPosition = min(COURT_LENGTH, rightyPosition);
+            }
+        }
         
         if (currentScreen == MODE_ALL) {
             bool anyActive = false;
@@ -1087,7 +1104,7 @@ public:
         // Labels: NET, BALL, LEFTY, RIGHTY are defined but not rendered on screen
         // NET - white net in the center
         // LEFTY - launcher 20 pixels from left court edge (green icon)
-        // RIGHTY - ball hitter 20 pixels from right court edge (red icon)
+        // RIGHTY - ball hitter at rightyPosition (white stick 2.5x NET height)
         // BALL - tennis ball
         
         // Draw LEFTY icon (small rectangle representing launcher) - 20 pixels from left edge
@@ -1101,12 +1118,14 @@ public:
         );
         pRenderTarget->FillRectangle(leftyIcon, pBrush);
         
-        // Draw RIGHTY icon (small rectangle representing hitter) - 20 pixels from right edge
-        pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::Red));
+        // Draw RIGHTY icon (white stick 2.5x NET height)
+        float rightyHeight = NET_HEIGHT * 2.5f * 50.0f * zoomFactor; // 2.5x NET height, scaled
+        float rightyPixelX = courtMargin + (rightyPosition / COURT_LENGTH) * courtPixelWidth;
+        pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::White));
         D2D1_RECT_F rightyIcon = D2D1::RectF(
-            courtMargin + courtPixelWidth - 25.0f,
-            courtBottom - 10.0f * zoomFactor,
-            courtMargin + courtPixelWidth - 20.0f,
+            rightyPixelX - 1.0f,
+            courtBottom - rightyHeight,
+            rightyPixelX + 1.0f,
             courtBottom
         );
         pRenderTarget->FillRectangle(rightyIcon, pBrush);
