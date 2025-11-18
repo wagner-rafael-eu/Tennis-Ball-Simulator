@@ -212,7 +212,7 @@ Ctrl+Shift+P → "Tasks: Run Task" → "Build and Run Tennis Ball Simulator"
 | Force Range | 10-1000 | N | Horizontal launch force |
 | Angle Range | 0-90 | ° | Launch angle |
 | Spin Range | -3000 to +9000 | RPM | Backspin to topspin |
-| RIGHTY Speed (Default) | 8.0 | m/s | Player movement speed |
+| RIGHTY Speed (Default) | 9.0 | m/s | Player movement speed |
 | Net Absorption | 80% | - | Energy absorbed on net collision |
 
 ### Court Surface Properties

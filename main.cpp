@@ -152,6 +152,7 @@ CourtSurface courts[4] = {
 struct BounceData {
     float time;
     float height;
+    float xPosition; // Horizontal position for trajectory tracking
 };
 
 // RIGHTY hit dialog parameters
@@ -199,7 +200,7 @@ public:
         trajectory.clear();
         bounces.clear();
         // Record initial position
-        trajectory.push_back({time, y});
+        trajectory.push_back({time, y, x});
     }
     
     void resetForHorizontalShot(float horizontalForce, float angleDegrees, float spin) {
@@ -222,7 +223,7 @@ public:
         isActive = true;
         trajectory.clear();
         bounces.clear();
-        trajectory.push_back({time, y});
+        trajectory.push_back({time, y, x});
     }
     
     void setAirResistance(float coefficient) {
@@ -309,7 +310,7 @@ public:
         }
         
         // Record trajectory
-        trajectory.push_back({time, y});
+        trajectory.push_back({time, y, x});
         
         // Check for ground collision
         if (y <= 0.0f) {
@@ -874,6 +875,23 @@ public:
             pBrush, 2.0f
         );
         
+        // Draw ball trajectory trace (subtle light gray)
+        if (simulationStarted && clayBall && clayBall->trajectory.size() > 1) {
+            pBrush->SetColor(D2D1::ColorF(0.8f, 0.8f, 0.8f, 0.4f)); // Light gray with transparency
+            for (size_t i = 1; i < clayBall->trajectory.size(); i++) {
+                float x1 = courtMargin + (clayBall->trajectory[i-1].xPosition / COURT_LENGTH) * courtPixelWidth;
+                float y1 = courtBottom - (clayBall->trajectory[i-1].height * 50.0f * zoomFactor);
+                float x2 = courtMargin + (clayBall->trajectory[i].xPosition / COURT_LENGTH) * courtPixelWidth;
+                float y2 = courtBottom - (clayBall->trajectory[i].height * 50.0f * zoomFactor);
+                
+                pRenderTarget->DrawLine(
+                    D2D1::Point2F(x1, y1),
+                    D2D1::Point2F(x2, y2),
+                    pBrush, 1.0f
+                );
+            }
+        }
+        
         // Draw ball if simulation started
         if (simulationStarted && clayBall) {
             float ballPixelX = courtMargin + (clayBall->x / COURT_LENGTH) * courtPixelWidth;
@@ -984,6 +1002,23 @@ public:
             D2D1::Point2F(netX + 10.0f, courtBottom - netPixelHeight),
             pBrush, 2.0f
         );
+        
+        // Draw ball trajectory trace (subtle light gray)
+        if (simulationStarted && grassBall && grassBall->trajectory.size() > 1) {
+            pBrush->SetColor(D2D1::ColorF(0.8f, 0.8f, 0.8f, 0.4f)); // Light gray with transparency
+            for (size_t i = 1; i < grassBall->trajectory.size(); i++) {
+                float x1 = courtMargin + (grassBall->trajectory[i-1].xPosition / COURT_LENGTH) * courtPixelWidth;
+                float y1 = courtBottom - (grassBall->trajectory[i-1].height * 50.0f * zoomFactor);
+                float x2 = courtMargin + (grassBall->trajectory[i].xPosition / COURT_LENGTH) * courtPixelWidth;
+                float y2 = courtBottom - (grassBall->trajectory[i].height * 50.0f * zoomFactor);
+                
+                pRenderTarget->DrawLine(
+                    D2D1::Point2F(x1, y1),
+                    D2D1::Point2F(x2, y2),
+                    pBrush, 1.0f
+                );
+            }
+        }
         
         // Draw ball if simulation started
         if (simulationStarted && grassBall) {
@@ -1096,6 +1131,23 @@ public:
             pBrush, 2.0f
         );
         
+        // Draw ball trajectory trace (subtle light gray)
+        if (simulationStarted && hardBall && hardBall->trajectory.size() > 1) {
+            pBrush->SetColor(D2D1::ColorF(0.8f, 0.8f, 0.8f, 0.4f)); // Light gray with transparency
+            for (size_t i = 1; i < hardBall->trajectory.size(); i++) {
+                float x1 = courtMargin + (hardBall->trajectory[i-1].xPosition / COURT_LENGTH) * courtPixelWidth;
+                float y1 = courtBottom - (hardBall->trajectory[i-1].height * 50.0f * zoomFactor);
+                float x2 = courtMargin + (hardBall->trajectory[i].xPosition / COURT_LENGTH) * courtPixelWidth;
+                float y2 = courtBottom - (hardBall->trajectory[i].height * 50.0f * zoomFactor);
+                
+                pRenderTarget->DrawLine(
+                    D2D1::Point2F(x1, y1),
+                    D2D1::Point2F(x2, y2),
+                    pBrush, 1.0f
+                );
+            }
+        }
+        
         // Draw ball if simulation started
         if (simulationStarted && hardBall) {
             float ballPixelX = courtMargin + (hardBall->x / COURT_LENGTH) * courtPixelWidth;
@@ -1206,6 +1258,23 @@ public:
             D2D1::Point2F(netX + 10.0f, courtBottom - netPixelHeight),
             pBrush, 2.0f
         );
+        
+        // Draw ball trajectory trace (subtle light gray)
+        if (simulationStarted && laverBall && laverBall->trajectory.size() > 1) {
+            pBrush->SetColor(D2D1::ColorF(0.8f, 0.8f, 0.8f, 0.4f)); // Light gray with transparency
+            for (size_t i = 1; i < laverBall->trajectory.size(); i++) {
+                float x1 = courtMargin + (laverBall->trajectory[i-1].xPosition / COURT_LENGTH) * courtPixelWidth;
+                float y1 = courtBottom - (laverBall->trajectory[i-1].height * 50.0f * zoomFactor);
+                float x2 = courtMargin + (laverBall->trajectory[i].xPosition / COURT_LENGTH) * courtPixelWidth;
+                float y2 = courtBottom - (laverBall->trajectory[i].height * 50.0f * zoomFactor);
+                
+                pRenderTarget->DrawLine(
+                    D2D1::Point2F(x1, y1),
+                    D2D1::Point2F(x2, y2),
+                    pBrush, 1.0f
+                );
+            }
+        }
         
         // Draw ball if simulation started
         if (simulationStarted && laverBall) {
