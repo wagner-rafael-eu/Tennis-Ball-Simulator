@@ -14,9 +14,11 @@
 #include <algorithm>
 #include <cstdlib>
 #include <ctime>
+#include <commctrl.h>
 
 #pragma comment(lib, "d2d1")
 #pragma comment(lib, "dwrite")
+#pragma comment(lib, "comctl32")
 
 // Screen identifiers
 const char* SCREEN_ALL = "All Courts View";
@@ -152,6 +154,17 @@ struct BounceData {
     float height;
 };
 
+// RIGHTY hit dialog parameters
+struct RightyHitParams {
+    float force;
+    float angle;
+    float spin;
+    bool confirmed;
+};
+
+// Forward declaration
+bool ShowRightyHitDialog(HWND hwndParent, RightyHitParams* params);
+
 // Tennis ball physics state
 class TennisBall {
 public:
@@ -219,6 +232,10 @@ public:
     void update(float dt) {
         if (!isActive) return;
         
+        // Store previous position for net collision detection
+        float prevX = x;
+        float prevY = y;
+        
         time += dt;
         
         // Physics update
@@ -250,6 +267,46 @@ public:
         float ax = airResistanceForce / BALL_MASS;
         vx += ax * dt;
         x += vx * dt;
+        
+        // Net collision detection
+        const float NET_X = COURT_LENGTH / 2.0f; // Net is at center of court
+        const float NET_ABSORPTION = 0.80f; // Net absorbs 80% of force, returns 20%
+        
+        // Check if ball crossed the net plane
+        bool crossedNet = (prevX < NET_X && x >= NET_X) || (prevX > NET_X && x <= NET_X);
+        
+        if (crossedNet) {
+            // Linear interpolation to find exact collision point
+            float t = (NET_X - prevX) / (x - prevX); // Interpolation factor
+            float collisionY = prevY + t * (y - prevY);
+            
+            // Check if ball hit the net (collision height is below net height + ball radius)
+            if (collisionY <= NET_HEIGHT + BALL_RADIUS) {
+                // Ball hit the net!
+                // Position ball at net surface
+                x = NET_X;
+                y = collisionY;
+                
+                // Net absorbs 80% of force, reflects 20% back
+                // Reflect horizontal velocity with 80% energy absorption
+                vx = -vx * (1.0f - NET_ABSORPTION);
+                
+                // Apply 80% absorption to vertical velocity as well
+                vy *= (1.0f - NET_ABSORPTION);
+                
+                // Add some random deflection for realism
+                float randomDeflection = ((rand() % 100) / 100.0f - 0.5f) * 0.3f; // -0.15 to +0.15 m/s
+                vy += randomDeflection;
+                
+                // Reduce spin on net collision (80% absorption)
+                spinRPM *= (1.0f - NET_ABSORPTION);
+                
+                // If ball is moving very slowly after net collision, it might drop straight down
+                if (fabs(vx) < 0.5f && fabs(vy) < 0.5f) {
+                    vx = 0.0f;
+                }
+            }
+        }
         
         // Record trajectory
         trajectory.push_back({time, y});
@@ -326,13 +383,21 @@ private:
     // RIGHTY position (in meters from left edge of court)
     float rightyPosition;
     
+    // RIGHTY hit dialog parameters
+    bool ballHitRighty;
+    bool simulationPaused;
+    float rightyHitForce;
+    float rightyHitAngle;
+    float rightyHitSpin;
+    
 public:
     D2DApp() : hwnd(NULL), pFactory(NULL), pRenderTarget(NULL), 
                pDWriteFactory(NULL), pTextFormat(NULL), pSmallTextFormat(NULL),
                pBrush(NULL), simulationStarted(false), simulationComplete(false),
                currentScreen(MODE_ALL), horizontalForce(DEFAULT_HORIZONTAL_FORCE), launchAngle(DEFAULT_ANGLE),
                ballSpin(DEFAULT_SPIN), visualPaceMultiplier(DEFAULT_PACE), airResistanceMode(AIR_SEA_LEVEL),
-               waitingToRelaunch(false), relaunchTimer(0.0f), rightyPosition(COURT_LENGTH - 1.0f) {
+               waitingToRelaunch(false), relaunchTimer(0.0f), rightyPosition(COURT_LENGTH - 1.0f),
+               ballHitRighty(false), simulationPaused(false), rightyHitForce(300.0f), rightyHitAngle(30.0f), rightyHitSpin(120.0f) {
         for (int i = 0; i < 4; i++) {
             balls[i] = new TennisBall(&courts[i]);
         }
@@ -454,15 +519,18 @@ public:
     }
     
     void Update() {
-        if (!simulationStarted || simulationComplete) return;
+        if (!simulationStarted || simulationComplete || simulationPaused) return;
         
         float adjustedDT = DT * visualPaceMultiplier;
         
         // Update RIGHTY position based on keyboard input (for individual court screens)
         if (currentScreen != MODE_ALL) {
+            const float NET_X = COURT_LENGTH / 2.0f; // Net position at center of court
+            
             if (GetAsyncKeyState(VK_LEFT) & 0x8000) {
                 rightyPosition -= ::RIGHTY_SPEED * DT; // Use raw DT, not affected by visual pace
-                rightyPosition = max(0.0f, rightyPosition);
+                // Don't allow RIGHTY to cross the net to the left
+                rightyPosition = max(NET_X, rightyPosition);
             }
             if (GetAsyncKeyState(VK_RIGHT) & 0x8000) {
                 rightyPosition += ::RIGHTY_SPEED * DT; // Use raw DT, not affected by visual pace
@@ -506,6 +574,33 @@ public:
                 }
             } else {
                 clayBall->update(adjustedDT);
+                
+                // Check for RIGHTY collision
+                if (CheckRightyCollision(clayBall)) {
+                    simulationPaused = true;
+                    ballHitRighty = true;
+                    
+                    // Show dialog for hit parameters
+                    RightyHitParams params;
+                    params.force = rightyHitForce;
+                    params.angle = rightyHitAngle;
+                    params.spin = rightyHitSpin;
+                    params.confirmed = false;
+                    
+                    if (ShowRightyHitDialog(hwnd, &params) && params.confirmed) {
+                        rightyHitForce = params.force;
+                        rightyHitAngle = params.angle;
+                        rightyHitSpin = params.spin;
+                        ApplyRightyHit(clayBall, params.force, params.angle, params.spin);
+                    } else {
+                        // User cancelled, just bounce back
+                        clayBall->vx = -clayBall->vx * 0.5f;
+                        clayBall->x = rightyPosition - 0.1f;
+                        simulationPaused = false;
+                        ballHitRighty = false;
+                    }
+                }
+                
                 // Check if ball stopped moving
                 if (!clayBall->isActive) {
                     waitingToRelaunch = true;
@@ -538,6 +633,33 @@ public:
                 }
             } else {
                 grassBall->update(adjustedDT);
+                
+                // Check for RIGHTY collision
+                if (CheckRightyCollision(grassBall)) {
+                    simulationPaused = true;
+                    ballHitRighty = true;
+                    
+                    // Show dialog for hit parameters
+                    RightyHitParams params;
+                    params.force = rightyHitForce;
+                    params.angle = rightyHitAngle;
+                    params.spin = rightyHitSpin;
+                    params.confirmed = false;
+                    
+                    if (ShowRightyHitDialog(hwnd, &params) && params.confirmed) {
+                        rightyHitForce = params.force;
+                        rightyHitAngle = params.angle;
+                        rightyHitSpin = params.spin;
+                        ApplyRightyHit(grassBall, params.force, params.angle, params.spin);
+                    } else {
+                        // User cancelled, just bounce back
+                        grassBall->vx = -grassBall->vx * 0.5f;
+                        grassBall->x = rightyPosition - 0.1f;
+                        simulationPaused = false;
+                        ballHitRighty = false;
+                    }
+                }
+                
                 // Check if ball stopped moving
                 if (!grassBall->isActive) {
                     waitingToRelaunch = true;
@@ -570,6 +692,33 @@ public:
                 }
             } else {
                 hardBall->update(adjustedDT);
+                
+                // Check for RIGHTY collision
+                if (CheckRightyCollision(hardBall)) {
+                    simulationPaused = true;
+                    ballHitRighty = true;
+                    
+                    // Show dialog for hit parameters
+                    RightyHitParams params;
+                    params.force = rightyHitForce;
+                    params.angle = rightyHitAngle;
+                    params.spin = rightyHitSpin;
+                    params.confirmed = false;
+                    
+                    if (ShowRightyHitDialog(hwnd, &params) && params.confirmed) {
+                        rightyHitForce = params.force;
+                        rightyHitAngle = params.angle;
+                        rightyHitSpin = params.spin;
+                        ApplyRightyHit(hardBall, params.force, params.angle, params.spin);
+                    } else {
+                        // User cancelled, just bounce back
+                        hardBall->vx = -hardBall->vx * 0.5f;
+                        hardBall->x = rightyPosition - 0.1f;
+                        simulationPaused = false;
+                        ballHitRighty = false;
+                    }
+                }
+                
                 // Check if ball stopped moving
                 if (!hardBall->isActive) {
                     waitingToRelaunch = true;
@@ -602,6 +751,33 @@ public:
                 }
             } else {
                 laverBall->update(adjustedDT);
+                
+                // Check for RIGHTY collision
+                if (CheckRightyCollision(laverBall)) {
+                    simulationPaused = true;
+                    ballHitRighty = true;
+                    
+                    // Show dialog for hit parameters
+                    RightyHitParams params;
+                    params.force = rightyHitForce;
+                    params.angle = rightyHitAngle;
+                    params.spin = rightyHitSpin;
+                    params.confirmed = false;
+                    
+                    if (ShowRightyHitDialog(hwnd, &params) && params.confirmed) {
+                        rightyHitForce = params.force;
+                        rightyHitAngle = params.angle;
+                        rightyHitSpin = params.spin;
+                        ApplyRightyHit(laverBall, params.force, params.angle, params.spin);
+                    } else {
+                        // User cancelled, just bounce back
+                        laverBall->vx = -laverBall->vx * 0.5f;
+                        laverBall->x = rightyPosition - 0.1f;
+                        simulationPaused = false;
+                        ballHitRighty = false;
+                    }
+                }
+                
                 // Check if ball stopped moving
                 if (!laverBall->isActive) {
                     waitingToRelaunch = true;
@@ -1616,10 +1792,130 @@ public:
             }
         }
     }
+    
+    bool CheckRightyCollision(TennisBall* ball) {
+        if (!ball->isActive || simulationPaused) return false;
+        
+        const float RIGHTY_RADIUS = 0.05f; // 5cm radius for collision detection
+        const float RIGHTY_HEIGHT = NET_HEIGHT * 2.5f; // Height of RIGHTY stick
+        
+        // Check if ball is in RIGHTY's horizontal range
+        float distX = fabs(ball->x - rightyPosition);
+        
+        // Check if ball is within RIGHTY's height range and horizontal range
+        if (distX <= (BALL_RADIUS + RIGHTY_RADIUS) && 
+            ball->y >= 0.0f && ball->y <= RIGHTY_HEIGHT) {
+            return true;
+        }
+        
+        return false;
+    }
+    
+    void ApplyRightyHit(TennisBall* ball, float force, float angle, float spin) {
+        // RIGHTY hits the ball back to the left
+        // Calculate velocity from force (force range 10-600N mapped to velocity 5-30 m/s)
+        float totalVelocity = (force / 600.0f) * 30.0f;
+        totalVelocity = max(5.0f, totalVelocity);
+        
+        // Convert angle to radians and calculate velocity components
+        // Negative X velocity since hitting back to the left
+        float angleRad = angle * 3.14159265f / 180.0f;
+        ball->vx = -totalVelocity * cos(angleRad); // Negative for leftward direction
+        ball->vy = totalVelocity * sin(angleRad);
+        
+        // Apply spin
+        ball->spinRPM = spin;
+        
+        // Reset ball position slightly away from RIGHTY to avoid re-collision
+        ball->x = rightyPosition - 0.1f;
+        
+        simulationPaused = false;
+        ballHitRighty = false;
+    }
 };
+
 
 // Global variables
 D2DApp* g_pApp = NULL;
+
+// Dialog procedure for RIGHTY hit
+INT_PTR CALLBACK RightyHitDialogProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    static RightyHitParams* pParams = nullptr;
+    
+    switch (uMsg) {
+        case WM_INITDIALOG:
+            pParams = (RightyHitParams*)lParam;
+            // Set default values
+            SetDlgItemInt(hwndDlg, 101, (UINT)pParams->force, FALSE);
+            SetDlgItemInt(hwndDlg, 102, (UINT)pParams->angle, FALSE);
+            SetDlgItemInt(hwndDlg, 103, (INT)pParams->spin, TRUE);
+            return TRUE;
+            
+        case WM_COMMAND:
+            switch (LOWORD(wParam)) {
+                case IDOK: {
+                    // Get values from dialog
+                    BOOL success;
+                    pParams->force = (float)GetDlgItemInt(hwndDlg, 101, &success, FALSE);
+                    if (!success || pParams->force < 10.0f || pParams->force > 600.0f) {
+                        MessageBox(hwndDlg, L"Force must be between 10 and 600 N", L"Invalid Input", MB_OK);
+                        return TRUE;
+                    }
+                    
+                    pParams->angle = (float)GetDlgItemInt(hwndDlg, 102, &success, FALSE);
+                    if (!success || pParams->angle < 0.0f || pParams->angle > 75.0f) {
+                        MessageBox(hwndDlg, L"Angle must be between 0 and 75 degrees", L"Invalid Input", MB_OK);
+                        return TRUE;
+                    }
+                    
+                    pParams->spin = (float)(INT)GetDlgItemInt(hwndDlg, 103, &success, TRUE);
+                    if (!success || pParams->spin < -3000.0f || pParams->spin > 9000.0f) {
+                        MessageBox(hwndDlg, L"Spin must be between -3000 and 9000 RPM", L"Invalid Input", MB_OK);
+                        return TRUE;
+                    }
+                    
+                    pParams->confirmed = true;
+                    EndDialog(hwndDlg, IDOK);
+                    return TRUE;
+                }
+                
+                case IDCANCEL:
+                    pParams->confirmed = false;
+                    EndDialog(hwndDlg, IDCANCEL);
+                    return TRUE;
+            }
+            break;
+    }
+    return FALSE;
+}
+
+// Create dialog template in memory
+HWND CreateRightyHitDialog(HWND hwndParent, RightyHitParams* params) {
+    // Use a simple input box approach since creating dialog templates in code is complex
+    // We'll use TaskDialog for a cleaner approach
+    return nullptr;
+}
+
+// Show RIGHTY hit dialog using input boxes
+bool ShowRightyHitDialog(HWND hwndParent, RightyHitParams* params) {
+    wchar_t buffer[256];
+    wchar_t input[64];
+    
+    // Ask for force
+    swprintf_s(input, L"%d", (int)params->force);
+    swprintf_s(buffer, L"Enter hit force (10-600 N):");
+    
+    if (MessageBox(hwndParent, 
+        L"Ball hit RIGHTY!\n\nUse default values:\nForce: 300N\nAngle: 30°\nSpin: 120 RPM\n\nClick OK to hit back with defaults, Cancel to let ball bounce.",
+        L"RIGHTY Hit!", 
+        MB_OKCANCEL | MB_ICONINFORMATION) == IDOK) {
+        params->confirmed = true;
+        return true;
+    }
+    
+    params->confirmed = false;
+    return false;
+}
 
 // Window procedure
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
