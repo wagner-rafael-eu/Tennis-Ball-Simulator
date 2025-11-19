@@ -59,6 +59,9 @@ Choose from professional player-inspired shot patterns:
 - **Federer Slice**: 240N, 21°, -1200 RPM - Low backspin slice
 - **Agassi Return**: 550N, 27°, 5000 RPM - Aggressive baseline return
 - **Sampras Serve**: 700N, 12°, 3000 RPM - Powerful flat serve
+- **Isner Kick Serve**: 580N, 39°, 6500 RPM - High-spin kick serve
+- **Fonseca Forehand**: 580N, 24°, 5000 RPM - Powerful topspin forehand
+- **Kuerten Backhand**: 450N, 35°, 4000 RPM - Strong topspin backhand
 
 Patterns can be selected via the "Launch Pattern" combo box in individual court views.
 
@@ -195,7 +198,7 @@ Ctrl+Shift+P → "Tasks: Run Task" → "Build and Run Tennis Ball Simulator"
 - **LEFT/RIGHT Arrow Keys** - Move RIGHTY player
 - **Mouse Wheel** - Adjust launch angle
 - **Mouse Click (Air Resistance Box)** - Cycle through air resistance modes (Vacuum, Sea Level, 1000m, 2000m)
-- **Mouse Click (Launch Pattern Box)** - Cycle through launch patterns (Random, Nadal, Federer, Agassi, Sampras)
+- **Mouse Click (Launch Pattern Box)** - Cycle through launch patterns (Random, Nadal, Federer, Agassi, Sampras, Isner, Fonseca, Kuerten)
 
 #### RIGHTY Hit Dialog (appears on ball collision)
 - Enter custom values for Force, Angle, and Spin
@@ -322,7 +325,7 @@ For a ball dropped from height h₀ with COR e:
 - **Functions:** 45+ methods
 - **Constants:** 15+ global constants
 - **Enums:** 5 (ScreenMode, CourtType, AirResistanceMode, LaunchPattern)
-- **Data Arrays:** 2 (airModes[4], launchPatterns[5])
+- **Data Arrays:** 2 (airModes[4], launchPatterns[8])
 
 ### Memory Footprint
 - **Executable Size:** ~40-50 KB (release build)

@@ -122,7 +122,10 @@ enum LaunchPattern {
     PATTERN_NADAL_TOPSPIN,
     PATTERN_FEDERER_BACKSPIN,
     PATTERN_AGASSI_RETURN,
-    PATTERN_SAMPRAS_SERVE
+    PATTERN_SAMPRAS_SERVE,
+    PATTERN_ISNER_KICK_SERVE,
+    PATTERN_FONSECA_FOREHAND,
+    PATTERN_KUERTEN_BACKHAND
 };
 
 struct LaunchPatternData {
@@ -134,12 +137,15 @@ struct LaunchPatternData {
 };
 
 // Launch pattern presets
-LaunchPatternData launchPatterns[5] = {
+LaunchPatternData launchPatterns[8] = {
     {PATTERN_RANDOM, L"Random", 0.0f, 0.0f, 0.0f},  // Special case - random values
     {PATTERN_NADAL_TOPSPIN, L"Nadal Topspin", 600.0f, 45.0f, 7000.0f},
     {PATTERN_FEDERER_BACKSPIN, L"Federer Slice", 240.0f, 21.0f, -1200.0f},
     {PATTERN_AGASSI_RETURN, L"Agassi Return", 550.0f, 27.0f, 5000.0f},
-    {PATTERN_SAMPRAS_SERVE, L"Sampras Serve", 700.0f, 12.0f, 3000.0f}
+    {PATTERN_SAMPRAS_SERVE, L"Sampras Serve", 700.0f, 12.0f, 3000.0f},
+    {PATTERN_ISNER_KICK_SERVE, L"Isner Kick Serve", 580.0f, 39.0f, 6500.0f},
+    {PATTERN_FONSECA_FOREHAND, L"Fonseca Forehand", 580.0f, 24.0f, 5000.0f},
+    {PATTERN_KUERTEN_BACKHAND, L"Kuerten Backhand", 450.0f, 35.0f, 4000.0f}
 };
 
 // Court surface properties
@@ -438,7 +444,7 @@ public:
         
         // Initialize combo box positions
         comboBoxRect = D2D1::RectF(10, 420, 200, 445);
-        launchPatternComboBoxRect = D2D1::RectF(210, 420, 450, 445);
+        launchPatternComboBoxRect = D2D1::RectF(210, 420, 500, 445);
     }
     
     ~D2DApp() {
@@ -1889,7 +1895,7 @@ public:
         if (x >= launchPatternComboBoxRect.left && x <= launchPatternComboBoxRect.right &&
             y >= launchPatternComboBoxRect.top && y <= launchPatternComboBoxRect.bottom) {
             // Cycle through launch patterns
-            currentLaunchPattern = (LaunchPattern)((currentLaunchPattern + 1) % 5);
+            currentLaunchPattern = (LaunchPattern)((currentLaunchPattern + 1) % 8);
             
             // Apply the new pattern
             ApplyLaunchPattern();
